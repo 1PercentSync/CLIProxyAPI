@@ -572,6 +572,101 @@ func (h *Handler) DeleteOAuthExcludedModels(c *gin.Context) {
 	h.persist(c)
 }
 
+// auth-priority: map[string]int
+func (h *Handler) GetAuthPriority(c *gin.Context) {
+	if h.cfg.AuthPriority == nil {
+		c.JSON(200, gin.H{"auth-priority": map[string]int{}})
+		return
+	}
+	c.JSON(200, gin.H{"auth-priority": h.cfg.AuthPriority})
+}
+
+func (h *Handler) PutAuthPriority(c *gin.Context) {
+	data, err := c.GetRawData()
+	if err != nil {
+		c.JSON(400, gin.H{"error": "failed to read body"})
+		return
+	}
+	var entries map[string]int
+	if err = json.Unmarshal(data, &entries); err != nil {
+		var wrapper struct {
+			Items map[string]int `json:"items"`
+		}
+		if err2 := json.Unmarshal(data, &wrapper); err2 != nil {
+			c.JSON(400, gin.H{"error": "invalid body"})
+			return
+		}
+		entries = wrapper.Items
+	}
+	// Filter out zero values
+	filtered := make(map[string]int)
+	for k, v := range entries {
+		k = strings.TrimSpace(k)
+		if k != "" && v != 0 {
+			filtered[k] = v
+		}
+	}
+	if len(filtered) == 0 {
+		h.cfg.AuthPriority = nil
+	} else {
+		h.cfg.AuthPriority = filtered
+	}
+	h.persist(c)
+}
+
+func (h *Handler) PatchAuthPriority(c *gin.Context) {
+	var body struct {
+		FileName *string `json:"file-name"`
+		Priority *int    `json:"priority"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.FileName == nil {
+		c.JSON(400, gin.H{"error": "invalid body"})
+		return
+	}
+	fileName := strings.TrimSpace(*body.FileName)
+	if fileName == "" {
+		c.JSON(400, gin.H{"error": "invalid file-name"})
+		return
+	}
+	if body.Priority == nil || *body.Priority == 0 {
+		// Remove entry if priority is 0 or nil
+		if h.cfg.AuthPriority != nil {
+			delete(h.cfg.AuthPriority, fileName)
+			if len(h.cfg.AuthPriority) == 0 {
+				h.cfg.AuthPriority = nil
+			}
+		}
+		h.persist(c)
+		return
+	}
+	if h.cfg.AuthPriority == nil {
+		h.cfg.AuthPriority = make(map[string]int)
+	}
+	h.cfg.AuthPriority[fileName] = *body.Priority
+	h.persist(c)
+}
+
+func (h *Handler) DeleteAuthPriority(c *gin.Context) {
+	fileName := strings.TrimSpace(c.Query("file-name"))
+	if fileName == "" {
+		c.JSON(400, gin.H{"error": "missing file-name"})
+		return
+	}
+	if h.cfg.AuthPriority == nil {
+		c.JSON(404, gin.H{"error": "file not found"})
+		return
+	}
+	if _, ok := h.cfg.AuthPriority[fileName]; !ok {
+		c.JSON(404, gin.H{"error": "file not found"})
+		return
+	}
+	delete(h.cfg.AuthPriority, fileName)
+	if len(h.cfg.AuthPriority) == 0 {
+		h.cfg.AuthPriority = nil
+	}
+	h.persist(c)
+}
+
 // codex-api-key: []CodexKey
 func (h *Handler) GetCodexKeys(c *gin.Context) {
 	c.JSON(200, gin.H{"codex-api-key": h.cfg.CodexKey})

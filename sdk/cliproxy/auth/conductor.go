@@ -265,6 +265,13 @@ func (m *Manager) Execute(ctx context.Context, providers []string, req cliproxye
 	if len(normalized) == 0 {
 		return cliproxyexecutor.Response{}, &Error{Code: "provider_not_found", Message: "no provider supplied"}
 	}
+
+	// Cross-provider priority mode: when auths have different priorities,
+	// bypass the provider-level round-robin and select globally by priority.
+	if m.hasCrossProviderPriority(req.Model, normalized) {
+		return m.executeWithPriority(ctx, normalized, req, opts)
+	}
+
 	rotated := m.rotateProviders(req.Model, normalized)
 
 	retryTimes, maxWait := m.retrySettings()
@@ -303,6 +310,13 @@ func (m *Manager) ExecuteCount(ctx context.Context, providers []string, req clip
 	if len(normalized) == 0 {
 		return cliproxyexecutor.Response{}, &Error{Code: "provider_not_found", Message: "no provider supplied"}
 	}
+
+	// Cross-provider priority mode: when auths have different priorities,
+	// bypass the provider-level round-robin and select globally by priority.
+	if m.hasCrossProviderPriority(req.Model, normalized) {
+		return m.executeCountWithPriority(ctx, normalized, req, opts)
+	}
+
 	rotated := m.rotateProviders(req.Model, normalized)
 
 	retryTimes, maxWait := m.retrySettings()
@@ -341,6 +355,13 @@ func (m *Manager) ExecuteStream(ctx context.Context, providers []string, req cli
 	if len(normalized) == 0 {
 		return nil, &Error{Code: "provider_not_found", Message: "no provider supplied"}
 	}
+
+	// Cross-provider priority mode: when auths have different priorities,
+	// bypass the provider-level round-robin and select globally by priority.
+	if m.hasCrossProviderPriority(req.Model, normalized) {
+		return m.executeStreamWithPriority(ctx, normalized, req, opts)
+	}
+
 	rotated := m.rotateProviders(req.Model, normalized)
 
 	retryTimes, maxWait := m.retrySettings()
