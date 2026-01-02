@@ -8,17 +8,18 @@ The system SHALL为 OpenAI 协议注入思考配置。
 
 > **注意：** 此模块只负责注入逻辑。模型验证、后缀解析、预算/等级转换和钳制由 `thinking/injector.rs` 完成。
 > 此模块接收已处理好的 `ThinkingConfig::Effort(String)` 并注入到请求体中。
+> 端点类型检测由调用方（`thinking/injector.rs`）完成，本模块只接收 `is_responses_endpoint: bool` 参数。
 
 #### Scenario: 聊天补全端点注入
-- **当** 协议为 OpenAI chat（`/v1/chat/completions`）
+- **当** `is_responses_endpoint` 为 `false`
 - **且** 收到 `ThinkingConfig::Effort` 配置
-- **则** The system SHALL 设置 `reasoning_effort` 字段
+- **则** The system SHALL 设置 `reasoning_effort` 字段（顶级）
 - **且** 将 `model` 字段设为基础模型名称
 
 #### Scenario: Responses 端点注入
-- **当** 协议为 OpenAI Responses（`/v1/responses`）
+- **当** `is_responses_endpoint` 为 `true`
 - **且** 收到 `ThinkingConfig::Effort` 配置
-- **则** The system SHALL 设置 `reasoning.effort` 字段
+- **则** The system SHALL 设置 `reasoning.effort` 字段（嵌套结构）
 - **且** 将 `model` 字段设为基础模型名称
 
 #### Scenario: 覆盖用户已设置的值
@@ -26,12 +27,26 @@ The system SHALL为 OpenAI 协议注入思考配置。
 - **且** 模型名称包含思考后缀
 - **则** The system SHALL 用后缀解析的值**覆盖**用户设置的值
 
+> **说明：OpenAI 端点类型**
+> OpenAI 有两种 API 端点格式，它们的 reasoning 字段命名不同：
+> - `/v1/chat/completions`：使用 `reasoning_effort`（顶级字段）
+> - `/v1/responses`：使用 `reasoning.effort`（嵌套在 reasoning 对象下）
+>
+> 端点类型由调用方根据请求路径判断（`path.contains("/responses")`），本模块只接收判断结果。
+
 ### 实现说明
 
 ```rust
 use crate::thinking::ThinkingConfig;
 
 /// 注入 OpenAI 思考配置
+///
+/// 参数：
+/// - `body`: 请求体 JSON
+/// - `base_model`: 去除后缀的基础模型名称
+/// - `thinking_config`: 已处理的思考配置（必须是 Effort 类型）
+/// - `is_responses_endpoint`: 是否为 Responses 端点（由调用方判断）
+///
 /// 前置条件：thinking_config 已由 injector 处理为 Effort 类型
 pub fn inject_openai(
     mut body: serde_json::Value,
