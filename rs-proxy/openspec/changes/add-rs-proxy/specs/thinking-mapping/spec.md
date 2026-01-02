@@ -35,15 +35,36 @@ The system SHALL将数值预算映射回努力等级字符串（OpenAI 协议需
 
 **文件：** `src/thinking/models.rs`
 
-#### Scenario: 预算到努力等级转换
-- **当** 需要将数值预算转换为努力等级时（如 OpenAI）
-- **则** The system SHALL使用以下范围：
-  - 0 → 若模型有离散等级则返回 `levels[0]`（最低等级）；否则返回 `"none"`
+#### Scenario: 预算到努力等级转换（有离散等级）
+- **当** 需要将数值预算转换为努力等级时（如 OpenAI 协议）
+- **且** 模型有离散等级列表
+- **则** The system SHALL使用模型的等级列表：
+  - 0 → `levels[0]`（最低等级）
   - -1 → `"auto"`
   - 1 - 1024 → `"low"`
   - 1025 - 8192 → `"medium"`
   - 8193 - 24576 → `"high"`
-  - 24577+ → 若模型有离散等级则返回 `levels[last]`（最高等级）；否则返回 `"xhigh"`
+  - 24577+ → `levels[last]`（最高等级）
+
+#### Scenario: 预算到努力等级转换（无离散等级 - 跨协议调用）
+- **当** 需要将数值预算转换为努力等级时
+- **且** 模型没有离散等级列表（如通过 OpenAI 协议调用 Claude/Gemini 2.5）
+- **则** The system SHALL使用通用映射表：
+  - 0 → `"none"`
+  - -1 → `"auto"`
+  - 1 - 1024 → `"low"`
+  - 1025 - 8192 → `"medium"`
+  - 8193 - 24576 → `"high"`
+  - 24577+ → `"xhigh"`
+
+> **说明：跨协议调用场景**
+> 当用户通过 OpenAI 兼容端点（如中转服务）调用 Claude 或 Gemini 2.5 模型时：
+> - 这些模型原生使用数值预算，没有离散等级列表
+> - 但 OpenAI 协议需要 `reasoning_effort` 字符串
+> - 此时使用通用映射表将预算转换为等级字符串
+>
+> 示例：`claude-sonnet-4(high)` 通过 `/v1/chat/completions` 调用
+> → budget = 24576 → reasoning_effort = "high"
 
 ### Requirement: Gemini thinkingLevel 专用映射
 
@@ -85,16 +106,6 @@ The system SHALL仅为声明支持思考的模型注入思考配置。
 > RS-Proxy 返回错误，确保行为可预测，防止错误配置导致的静默失败
 >（如错误的 max_tokens 值）。
 
-### Requirement: 离散等级验证
-
-The system SHALL验证使用离散等级的模型的努力等级。
-
-**文件：** `src/thinking/models.rs`
-
-#### Scenario: 离散模型使用无效等级
-- **当** 模型使用离散等级且后缀包含不支持的等级时
-- **则** The system SHALL返回 HTTP 400 错误
-
 ### 实现说明
 
 ```rust
@@ -125,31 +136,22 @@ pub fn gemini_level_to_budget(level: &str) -> Option<i32> {
 }
 
 /// 预算到努力等级（反向映射，OpenAI 协议需要）
-pub fn budget_to_effort(budget: i32, model_levels: Option<&[String]>) -> &'static str {
+/// 支持有离散等级和无离散等级（跨协议调用）两种情况
+pub fn budget_to_effort<'a>(budget: i32, model_levels: Option<&'a [&'a str]>) -> &'a str {
     match budget {
-        0 => {
-            // 若模型有离散等级，返回最低等级；否则返回 "none"
-            if let Some(levels) = model_levels {
-                if !levels.is_empty() {
-                    return levels[0].as_str();
-                }
-            }
-            "none"
-        }
+        // 有离散等级：返回最低等级；无离散等级：返回 "none"
+        0 => model_levels
+            .and_then(|l| l.first().copied())
+            .unwrap_or("none"),
         -1 => "auto",
         1..=1024 => "low",
         1025..=8192 => "medium",
         8193..=24576 => "high",
-        _ if budget > 24576 => {
-            // 若模型有离散等级，返回最高等级；否则返回 "xhigh"
-            if let Some(levels) = model_levels {
-                if !levels.is_empty() {
-                    return levels[levels.len() - 1].as_str();
-                }
-            }
-            "xhigh"
-        }
-        _ => "medium",  // 意外值的回退
+        // 有离散等级：返回最高等级；无离散等级：返回 "xhigh"
+        _ if budget > 24576 => model_levels
+            .and_then(|l| l.last().copied())
+            .unwrap_or("xhigh"),
+        _ => "medium",  // 负数（除 -1 外）的回退
     }
 }
 
@@ -159,16 +161,3 @@ pub fn budget_to_effort_for_model(model: &str, budget: i32) -> String {
     budget_to_effort(budget, levels.as_deref()).to_string()
 }
 ```
-
----
-
-## CLIProxyAPI 待跟进问题
-
-> 以下问题需要在 CLIProxyAPI 中确认或修复，RS-Proxy 已采用不同的处理方式。
-
-### 问题：数值预算转等级后未验证等级有效性
-
-- **位置：** `internal/util/thinking.go` 的 `ThinkingBudgetToEffort` 函数
-- **问题：** 数值预算（如 `8000`）转换为等级（如 `medium`）后，未检查该等级是否在模型支持列表中。若模型只支持 `["low", "high"]`，则 `medium` 无效，最终由 `ValidateThinkingConfig` 返回 400。
-- **RS-Proxy 处理：** 向上 clamp 到最近的支持等级（如 `medium` → `high`）
-- **建议：** CLIProxyAPI 可考虑采用相同的 clamp 逻辑，或明确返回更具体的错误信息
