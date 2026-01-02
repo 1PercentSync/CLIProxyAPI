@@ -145,6 +145,12 @@ use crate::protocol::Protocol;
 use crate::thinking::parser::parse_model_suffix;
 use crate::thinking::models::{level_to_budget, budget_to_effort, clamp_budget};
 
+/// 检测是否为 OpenAI Responses 端点
+/// 根据请求路径判断使用哪种字段格式
+fn is_responses_endpoint(path: &str) -> bool {
+    path.contains("/responses")
+}
+
 /// 思考注入结果
 pub enum InjectionResult {
     /// 成功注入，返回修改后的请求体
@@ -166,6 +172,7 @@ pub fn inject_thinking_config(
     body: serde_json::Value,
     model_with_suffix: &str,
     protocol: Protocol,
+    request_path: &str,  // 用于检测 OpenAI 端点类型
 ) -> InjectionResult {
     // 1. 解析后缀
     let (base_model, suffix) = parse_model_suffix(model_with_suffix);
@@ -203,7 +210,11 @@ pub fn inject_thinking_config(
 
     // 6. 根据协议注入
     let injected = match protocol {
-        Protocol::OpenAI => inject_openai(body, &base_model, thinking_config),
+        Protocol::OpenAI => {
+            // OpenAI 需要区分端点类型：chat/completions vs responses
+            let is_responses = is_responses_endpoint(request_path);
+            inject_openai(body, &base_model, thinking_config, is_responses)
+        }
         Protocol::Anthropic => inject_anthropic(body, &base_model, thinking_config),
         Protocol::Gemini => inject_gemini(body, &base_model, thinking_config),
     };
@@ -343,5 +354,20 @@ thinking/injector.rs
     ├── thinking/parser.rs      (解析后缀)
     ├── thinking/models.rs      (等级/预算映射)
     ├── models/registry.rs      (模型查询)
+    ├── is_responses_endpoint() (本模块内，端点类型检测)
     └── protocol/*.rs           (协议特定注入)
+```
+
+### 调用方说明
+
+调用 `inject_thinking_config` 时需要传入 `request_path` 参数：
+
+```rust
+// 在代理核心模块中调用
+let result = inject_thinking_config(
+    body,
+    model_name,
+    protocol,
+    request.uri().path(),  // 传入请求路径，用于 OpenAI 端点类型检测
+);
 ```
