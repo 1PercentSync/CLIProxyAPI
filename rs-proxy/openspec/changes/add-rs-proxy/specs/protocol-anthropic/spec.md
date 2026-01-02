@@ -2,43 +2,33 @@
 
 ### Requirement: Anthropic 协议思考注入
 
-The system SHALL为 Anthropic 协议注入思考配置，与 CLIProxyAPI 保持一致。
+The system SHALL为 Anthropic 协议注入思考配置。
 
 **文件：** `src/protocol/anthropic.rs`
 
-#### Scenario: 带努力等级的 Anthropic
-- **当** 模型带有后缀 `(high)` 且协议为 Anthropic 时
-- **且** 模型存在于注册表中并支持思考
-- **则** The system SHALL将 `thinking.type` 设为 `enabled`
-- **且** 将 `thinking.budget_tokens` 设为 `24576`
+> **注意：** 此模块只负责注入逻辑。模型验证、后缀解析、预算钳制由 `thinking/injector.rs` 完成。
+> 此模块接收已处理好的 `ThinkingConfig::Budget(i32)` 并注入到请求体中。
+
+#### Scenario: 正预算注入
+- **当** 收到 `ThinkingConfig::Budget(budget)` 且 `budget > 0`
+- **则** The system SHALL 设置 `thinking.type` 为 `"enabled"`
+- **且** 设置 `thinking.budget_tokens` 为预算值
 - **且** 将 `model` 字段设为基础模型名称
-- **且** 确保 `max_tokens` 足够（见下方 max_tokens 调整）
+- **且** 调整 `max_tokens`（见下方）
 
-#### Scenario: 带数值预算的 Anthropic
-- **当** 模型带有后缀 `(16384)` 且协议为 Anthropic 时
-- **且** 模型存在于注册表中并支持思考
-- **则** The system SHALL将 `thinking.type` 设为 `enabled`
-- **且** 将 `thinking.budget_tokens` 设为 `16384`（钳制到模型范围内）
+#### Scenario: 零或负预算
+- **当** 收到 `ThinkingConfig::Budget(budget)` 且 `budget <= 0`
+- **则** The system SHALL 不设置任何思考配置
+- **且** 仅将 `model` 字段设为基础模型名称
 
-#### Scenario: 带 none 等级的 Anthropic
-- **当** 模型带有后缀 `(none)` 且协议为 Anthropic 时
-- **则** The system SHALL不设置任何思考配置
-- **且** 原样返回请求体（无 `thinking.type`，无 `thinking.budget_tokens`）
-
-#### Scenario: 带零或负预算的 Anthropic
-- **当** 处理后模型的预算 <= 0 时
-- **则** The system SHALL不设置任何思考配置
-
-#### Scenario: 未知模型带思考后缀
-- **当** 模型带有思考后缀（如 `(high)`、`(16384)`）
-- **且** 模型不存在于注册表中
-- **则** The system SHALL返回 HTTP 400 错误，说明模型未知
+#### Scenario: 覆盖用户已设置的值
+- **当** 用户请求中已包含 `thinking.type` 或 `thinking.budget_tokens`
+- **且** 模型名称包含思考后缀
+- **则** The system SHALL 用后缀解析的值**覆盖**用户设置的值
 
 > **⚠️ 设计决策 - 与 CLIProxyAPI 不同：**
-> RS-Proxy 要求模型必须在注册表中才能应用思考配置。
-> CLIProxyAPI 在注册表查找失败时使用 `budget + 4000` 作为 max_tokens 的回退值。
-> RS-Proxy 对未知模型带思考后缀返回错误。
-> 这确保了行为可预测，防止错误配置导致的静默失败。
+> CLIProxyAPI 的 `ApplyClaudeThinkingConfig` 在用户已设置 `thinking` 时不覆盖（用户优先）。
+> RS-Proxy 统一采用"后缀覆盖用户值"策略，简化处理逻辑。
 
 ### Requirement: 思考启用时的 max_tokens 调整
 
@@ -48,48 +38,57 @@ The system SHALL确保启用思考时 `max_tokens` 足够。
 
 #### Scenario: max_tokens 调整
 - **当** 思考启用且 `budget_tokens > 0` 时
-- **且** 模型在注册表中有 `MaxCompletionTokens`
-- **则** The system SHALL将 `max_tokens` 设为 `MaxCompletionTokens`（如当前值较低）
+- **则** The system SHALL 将 `max_tokens` 设为模型的 `MaxCompletionTokens`（如当前值较低或未设置）
 
-> **说明：** 与 CLIProxyAPI 使用 `budget + 4000` 回退不同，RS-Proxy 不需要此回退，
-> 因为未知模型在到达此处之前就会被拒绝。
+> **说明：** Anthropic API 要求 `max_tokens > thinking.budget_tokens`。
 
 ### 实现说明
 
 ```rust
-// 首先，检查模型是否存在于注册表中
-let model_info = registry.get_model_info(&base_model)
-    .ok_or_else(|| Error::UnknownModel(base_model.clone()))?;
+use crate::thinking::ThinkingConfig;
+use crate::models::registry::ModelInfo;
 
-// 检查模型是否支持思考
-if model_info.thinking.is_none() {
-    // 模型不支持思考，仅去除括号并转发
-    body["model"] = base_model;
-    return Ok(body);
-}
+/// 注入 Anthropic 思考配置
+/// 前置条件：thinking_config 已由 injector 处理为 Budget 类型
+pub fn inject_anthropic(
+    mut body: serde_json::Value,
+    base_model: &str,
+    thinking_config: ThinkingConfig,
+    model_info: &ModelInfo,
+) -> serde_json::Value {
+    // 更新模型名称（去除后缀）
+    body["model"] = serde_json::Value::String(base_model.to_string());
 
-// 仅当 budget > 0 时应用思考配置
-if budget > 0 {
-    body["model"] = base_model;
-    body["thinking"]["type"] = "enabled";
-    body["thinking"]["budget_tokens"] = budget;
+    // 提取预算值
+    let budget = match thinking_config {
+        ThinkingConfig::Budget(b) => b,
+        ThinkingConfig::Effort(_) => {
+            // Anthropic 协议不应收到 Effort 类型，injector 应已转换
+            unreachable!("Anthropic protocol should receive Budget, not Effort")
+        }
+    };
 
-    // 将 max_tokens 设为模型的 MaxCompletionTokens
-    let current_max = body["max_tokens"].as_i64().unwrap_or(0);
-    let required_max = model_info.max_completion_tokens as i64;  // 如 Claude 4.5 为 64000
+    // 仅当 budget > 0 时应用思考配置
+    if budget > 0 {
+        // 设置思考配置
+        if body.get("thinking").is_none() {
+            body["thinking"] = serde_json::json!({});
+        }
+        body["thinking"]["type"] = serde_json::Value::String("enabled".to_string());
+        body["thinking"]["budget_tokens"] = serde_json::Value::Number(budget.into());
 
-    if current_max < required_max {
-        body["max_tokens"] = required_max;
+        // 调整 max_tokens
+        let current_max = body.get("max_tokens")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let required_max = model_info.max_completion_tokens as i64;
+
+        if current_max < required_max {
+            body["max_tokens"] = serde_json::Value::Number(required_max.into());
+        }
     }
-} else {
-    // budget <= 0（包括映射到 0 的 "none" 等级）
-    // 不设置任何思考配置，原样返回 body
-    body["model"] = base_model;
+    // budget <= 0：不设置任何思考配置，仅返回更新了 model 的 body
+
+    body
 }
 ```
-
-**关键点：**
-- 等级字符串首先通过映射表转换为预算
-- `(none)` 映射到预算 0，意味着不设置思考配置（而非 `budget_tokens = 0`）
-- Anthropic API 要求 `max_tokens > thinking.budget_tokens`；违反此规则返回 HTTP 400
-- **RS-Proxy 拒绝未知模型带思考后缀（与 CLIProxyAPI 不同）**
