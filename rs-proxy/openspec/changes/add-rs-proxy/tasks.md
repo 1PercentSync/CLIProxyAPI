@@ -66,7 +66,7 @@
 
 ## 6. 模型列表增强
 
-- [ ] 6.1 实现基于请求头的协议检测（仅用于 /v1/models）
+- [ ] 6.1 实现基于请求头的协议检测（protocol/mod.rs，仅用于 /v1/models）
   - `x-api-key` → Anthropic
   - `Authorization: Bearer` → OpenAI
 - [ ] 6.2 实现模型列表增强器（models/enhancer.rs）
