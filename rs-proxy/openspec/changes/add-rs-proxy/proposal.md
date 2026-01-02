@@ -10,11 +10,7 @@
 - 实现模型名称后缀解析，与 CLIProxyAPI 的逻辑保持一致
 - 手动维护模型注册表，对照 CLIProxyAPI 的 `internal/registry/model_definitions.go` 编写 Rust 模型定义
 - 支持 OpenAI、Anthropic 和 Gemini API 协议（协议由 URL 路径决定，`/v1/models` 除外，使用请求头判断）
-- 思考配置注入与 CLIProxyAPI 行为对齐：
-  - **OpenAI/Codex/Qwen/iFlow/OpenRouter：** `reasoning_effort`（chat）或 `reasoning.effort`（Responses）；数值预算转换为等级字符串
-  - **Anthropic：** `thinking.type=enabled` + `thinking.budget_tokens`；`max_tokens` 设为模型的 `MaxCompletionTokens`；`(none)` 不设置思考配置
-  - **Gemini 2.5：** `thinkingBudget`（数值）+ 自动设置 `include_thoughts=true`
-  - **Gemini 3：** `thinkingLevel`（字符串：low/medium/high）+ 自动设置 `includeThoughts=true`
+- 思考配置注入逻辑与 CLIProxyAPI 保持一致（参见 CLIProxyAPI 的 `internal/util/thinking*.go` 和 `internal/runtime/executor/*_executor.go`）
 - 为模型列表响应添加思考等级变体（此功能与 CLIProxyAPI 不同，后者不包含变体）
 - 正确处理 SSE 流式响应
 
@@ -28,6 +24,13 @@
 - **RS-Proxy：** 对未知模型带思考后缀返回 HTTP 400 错误
 
 **理由：** 确保行为可预测，防止错误配置导致的静默失败。
+
+### 数值预算转等级时的 Clamp 行为
+
+- **CLIProxyAPI：** 数值预算转换为等级后，不验证该等级是否在模型支持列表中
+- **RS-Proxy：** 数值预算转换为等级后，若该等级不在模型支持列表中，向上 clamp 到最近的支持等级
+
+**理由：** 提供更好的用户体验，尽可能满足用户的推理深度意图。
 
 ## 影响
 
