@@ -1,25 +1,26 @@
 ## ADDED Requirements
 
-### Requirement: Header Forwarding
-The system SHALL transparently forward authentication and other headers.
+### Requirement: 头部转发
 
-**File:** `src/proxy/client.rs`
+The system SHALL透明转发认证和其他请求头。
 
-#### Scenario: Authorization header
-- **WHEN** request contains `Authorization` header
-- **THEN** the system SHALL forward it to upstream unchanged
+**文件：** `src/proxy/client.rs`
 
-#### Scenario: API key header
-- **WHEN** request contains `x-api-key` header
-- **THEN** the system SHALL forward it to upstream unchanged
+#### Scenario: Authorization 头
+- **当** 请求包含 `Authorization` 头时
+- **则** The system SHALL原样转发到上游
 
-### Implementation Notes
+#### Scenario: API key 头
+- **当** 请求包含 `x-api-key` 头时
+- **则** The system SHALL原样转发到上游
+
+### 实现说明
 
 ```rust
 fn forward_headers(incoming: &HeaderMap) -> HeaderMap {
     let mut outgoing = HeaderMap::new();
 
-    // Forward all headers except host-specific ones
+    // 转发所有头部，除了主机特定的
     for (key, value) in incoming.iter() {
         if key != "host" && key != "content-length" {
             outgoing.insert(key.clone(), value.clone());
@@ -30,7 +31,7 @@ fn forward_headers(incoming: &HeaderMap) -> HeaderMap {
 }
 ```
 
-**Critical:**
-- ALL authentication headers must be forwarded unchanged
-- Do not modify, strip, or rewrite auth headers
-- Exclude only `Host` and `Content-Length` (recomputed for proxy)
+**关键点：**
+- 所有认证头必须原样转发
+- 不要修改、去除或重写认证头
+- 仅排除 `Host` 和 `Content-Length`（代理会重新计算）

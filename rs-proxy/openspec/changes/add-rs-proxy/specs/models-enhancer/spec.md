@@ -1,26 +1,27 @@
 ## ADDED Requirements
 
-### Requirement: Model List Enhancement
-The system SHALL enhance model list responses with thinking level variants. This differs from CLIProxyAPI which does not include variants.
+### Requirement: 模型列表增强
 
-**File:** `src/models/enhancer.rs`
+The system SHALL为模型列表响应添加思考等级变体。此功能与 CLIProxyAPI 不同，后者不包含变体。
 
-#### Scenario: OpenAI models endpoint
-- **WHEN** a GET request is made to `/v1/models` with OpenAI headers
-- **THEN** the system SHALL forward to upstream
-- **AND** for each model supporting thinking, add variants like `model(low)`, `model(medium)`, `model(high)`
+**文件：** `src/models/enhancer.rs`
 
-#### Scenario: Anthropic models endpoint
-- **WHEN** a GET request is made to `/v1/models` with Anthropic headers
-- **THEN** the system SHALL forward to upstream
-- **AND** enhance response with thinking variants
+#### Scenario: OpenAI 模型端点
+- **当** 以 OpenAI 请求头向 `/v1/models` 发起 GET 请求时
+- **则** The system SHALL转发到上游
+- **且** 为每个支持思考的模型添加变体，如 `model(low)`、`model(medium)`、`model(high)`
 
-#### Scenario: Gemini models endpoint
-- **WHEN** a GET request is made to `/v1beta/models`
-- **THEN** the system SHALL forward to upstream
-- **AND** enhance response with thinking variants for supported models
+#### Scenario: Anthropic 模型端点
+- **当** 以 Anthropic 请求头向 `/v1/models` 发起 GET 请求时
+- **则** The system SHALL转发到上游
+- **且** 为响应添加思考变体
 
-### Implementation Notes
+#### Scenario: Gemini 模型端点
+- **当** 向 `/v1beta/models` 发起 GET 请求时
+- **则** The system SHALL转发到上游
+- **且** 为支持的模型添加思考变体
+
+### 实现说明
 
 ```rust
 fn enhance_model_list(models: Vec<Model>, protocol: Protocol) -> Vec<Model> {
@@ -41,4 +42,4 @@ fn enhance_model_list(models: Vec<Model>, protocol: Protocol) -> Vec<Model> {
 }
 ```
 
-**Important:** This is an RS-Proxy-specific feature. CLIProxyAPI does NOT enhance model lists with variants.
+**重要说明：** 这是 RS-Proxy 特有的功能。CLIProxyAPI 不会为模型列表添加变体。

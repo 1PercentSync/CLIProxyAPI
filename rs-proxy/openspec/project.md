@@ -1,137 +1,132 @@
-# Project Context
+# 项目上下文
 
-## Purpose
+## 目的
 
-RS-Proxy is a standalone lightweight Rust reverse proxy that can be used independently with any upstream server. It parses thinking configuration from model name suffixes (e.g., `model(high)` or `model(16384)`) and injects the appropriate configuration into API requests, allowing clients to control thinking/reasoning behavior without modifying their request payloads.
+RS-Proxy 是一个独立的轻量级 Rust 反向代理，可独立运行并对接任意上游服务器。它从模型名称后缀（如 `model(high)` 或 `model(16384)`）解析思考配置，并将相应配置注入 API 请求，使客户端无需修改请求体即可控制思考/推理行为。
 
-**Important clarifications:**
-- RS-Proxy is NOT a middleware specifically for CLIProxyAPI - it is a general-purpose proxy that can forward to any upstream API server
-- RS-Proxy MUST align its thinking configuration parsing and injection logic with CLIProxyAPI for consistency
-- RS-Proxy does NOT provide protocol conversion - it only injects thinking configuration into the original protocol format
-- RS-Proxy enhances `/v1/models` response with thinking level variants (unlike CLIProxyAPI which does not include variants)
+**重要说明：**
+- RS-Proxy 不是专门为 CLIProxyAPI 设计的中间件——它是通用代理，可转发到任意上游 API 服务器
+- RS-Proxy 的思考配置解析和注入逻辑必须与 CLIProxyAPI 保持一致
+- RS-Proxy 不提供协议转换——仅向原始协议格式注入思考配置
+- RS-Proxy 会为 `/v1/models` 响应添加思考等级变体（CLIProxyAPI 不包含变体）
 
-## Tech Stack
+## 技术栈
 
-- **Language:** Rust (latest stable)
-- **Runtime:** Tokio (async runtime)
-- **HTTP Server:** Axum
-- **HTTP Client:** Reqwest
-- **CLI:** Argh
-- **JSON:** Serde + Serde_json
-- **Middleware:** Tower-http
-- **Streams:** Futures + Tokio-stream
-- **Regex:** Regex
-- **Errors:** Thiserror
-- **Logging:** Tracing + Tracing-subscriber
+- **语言：** Rust（最新稳定版）
+- **运行时：** Tokio（异步运行时）
+- **HTTP 服务器：** Axum
+- **HTTP 客户端：** Reqwest
+- **命令行：** Argh
+- **JSON：** Serde + Serde_json
+- **中间件：** Tower-http
+- **流处理：** Futures + Tokio-stream
+- **正则：** Regex
+- **错误处理：** Thiserror
+- **日志：** Tracing + Tracing-subscriber
 
-### Build Dependencies
+### 依赖选型说明
 
-- **Reqwest** with `blocking` feature for synchronous HTTP in `build.rs`
-- **Regex** for parsing Go source files
+- **Argh 而非 Clap：** 对于简单 CLI（仅2个参数）更轻量，编译更快
+- **Thiserror：** 使用派生宏定义自定义错误类型，通过 `#[from]` 包装错误
+- **无需 once_cell：** 使用 `std::sync::LazyLock`（Rust 1.80 起稳定）
 
-### Notes on Dependency Choices
+## 项目规范
 
-- **Argh over Clap:** Lighter weight for simple CLIs (only 2 args), faster compile times
-- **Thiserror:** Derive macro for custom error types with `#[from]` for wrapping errors
-- **No once_cell:** Using `std::sync::LazyLock` (stable since Rust 1.80) instead
+### 代码风格
 
-## Project Conventions
+- 遵循 Rust 标准格式化（`cargo fmt`）
+- 使用 `clippy` 进行代码检查，采用默认规则
+- 生产代码优先显式错误处理，避免 `.unwrap()`
+- 使用 `thiserror` 定义自定义错误类型
+- 使用 rustdoc 注释记录公共 API
 
-### Code Style
+### 架构模式
 
-- Follow Rust standard formatting (`cargo fmt`)
-- Use `clippy` for linting with default rules
-- Prefer explicit error handling over `.unwrap()` in production code
-- Use `thiserror` for custom error types
-- Document public APIs with rustdoc comments
+- **模块化结构：** 关注点分离到 `proxy/`、`thinking/`、`protocol/`、`models/` 模块
+- **静态模型注册表：** 在开发时对照 CLIProxyAPI 的 `internal/registry/model_definitions.go` 手动维护 Rust 模型定义
+- **透明代理：** 最小化请求/响应修改，仅注入思考配置
+- **协议特定处理器：** 每种 API 协议（OpenAI、Anthropic、Gemini）有独立的转换逻辑
 
-### Architecture Patterns
+### 测试策略
 
-- **Modular structure:** Separate concerns into `proxy/`, `thinking/`, `protocol/`, `models/` modules
-- **Compile-time generation:** Use `build.rs` to fetch and parse CLIProxyAPI source files
-- **Transparent proxying:** Minimal request/response modification, only inject thinking config
-- **Protocol-specific handlers:** Each API protocol (OpenAI, Anthropic, Gemini) has its own transformation logic
+- 针对解析和转换逻辑的单元测试
+- 使用模拟上游服务器的集成测试
+- 对真实 API 端点的手动测试
 
-### Testing Strategy
+### Git 工作流
 
-- Unit tests for parsing and transformation logic
-- Integration tests with mock upstream server
-- Manual testing with real API endpoints
+- 从 `main` 分支创建功能分支
+- 约定式提交：`feat:`、`fix:`、`refactor:`、`docs:`、`test:`
+- 基于 PR 的合并，需代码审查
 
-### Git Workflow
+## 领域上下文
 
-- Feature branches off `main`
-- Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`
-- PR-based merges with review
+### 思考配置
 
-## Domain Context
+思考/推理是现代大语言模型的一项特性，允许在响应前进行扩展"思考"。RS-Proxy 注入的思考配置与 CLIProxyAPI 的行为保持一致。
 
-### Thinking Configuration
+**协议检测：**
+- URL 路径决定大多数端点的协议（如 `/v1/messages` → Anthropic，`/v1beta/models/*` → Gemini）
+- 请求头（`x-api-key` vs `Authorization: Bearer`）仅用于区分共享的 `/v1/models` 端点的协议
 
-Thinking/reasoning is a feature in modern LLMs that allows extended "thinking" before responding. RS-Proxy injects thinking configuration aligned with CLIProxyAPI's behavior.
+**注入规则（与 CLIProxyAPI 对齐）：**
+- 仅影响注册表中存在且支持思考的模型
+- **未知模型带思考后缀：** 返回 HTTP 400 错误（见下方设计决策）
+- **Gemini 2.5：** 设置 `generationConfig.thinkingConfig.thinkingBudget`（数值），自动设置 `include_thoughts=true`
+- **Gemini 3：** 设置 `generationConfig.thinkingConfig.thinkingLevel`（字符串：low/medium/high），自动设置 `includeThoughts=true`
+- **Claude API：** 设置 `thinking.type=enabled` 和 `thinking.budget_tokens`，将 `max_tokens` 设为模型的 `MaxCompletionTokens`
+- **OpenAI/Codex/Qwen/iFlow/OpenRouter：** 等级/auto/none 覆盖 `reasoning_effort`（chat）或 `reasoning.effort`（Responses）；数值预算转换为等级字符串
+- 使用离散等级的模型会验证等级；不支持的值返回 400
+- Claude 模型的 `(none)` 等级不设置任何思考配置（而非 `budget_tokens=0`）
 
-**Protocol Detection:**
-- URL path determines protocol for most endpoints (e.g., `/v1/messages` → Anthropic, `/v1beta/models/*` → Gemini)
-- Request headers (`x-api-key` vs `Authorization: Bearer`) are ONLY used to distinguish protocol for the shared `/v1/models` endpoint
+### 努力等级映射
 
-**Injection Rules (aligned with CLIProxyAPI):**
-- Only affects models that exist in registry with thinking support
-- **Unknown models with thinking suffix:** Return HTTP 400 error (see Design Decisions below)
-- **Gemini 2.5:** Sets `generationConfig.thinkingConfig.thinkingBudget` (numeric), auto-sets `include_thoughts=true`
-- **Gemini 3:** Sets `generationConfig.thinkingConfig.thinkingLevel` (string: low/medium/high), auto-sets `includeThoughts=true`
-- **Claude API:** Sets `thinking.type=enabled` and `thinking.budget_tokens`, sets `max_tokens` to model's `MaxCompletionTokens`
-- **OpenAI/Codex/Qwen/iFlow/OpenRouter:** Level/auto/none overrides `reasoning_effort` (chat) or `reasoning.effort` (Responses); numeric budgets are converted to level strings
-- Models using discrete levels validate the level; unsupported values return 400
-- `(none)` level results in NO thinking configuration being set (not `budget_tokens=0`) for claude models
+| 等级     | 预算（tokens） | 说明 |
+|----------|---------------|------|
+| none     | 0（若不允许0则钳制到最小值） | 禁用思考 |
+| auto     | -1（动态，或不支持时取中点） | 由上游自动分配 |
+| minimal  | 512           | 低成本推理 |
+| low      | 1024          | 快速推理 |
+| medium   | 8192          | 中等推理深度 |
+| high     | 24576         | 深度推理 |
+| xhigh    | 32768         | 更深推理 |
 
-### Effort Level Mapping
+### 模型名称后缀语法
 
-| Level    | Budget (tokens) | Description |
-|----------|-----------------|-------------|
-| none     | 0 (clamped to min if 0 not allowed) | Disable thinking |
-| auto     | -1 (dynamic, or mid point if not supported) | Auto-assign by upstream |
-| minimal  | 512             | Low-cost reasoning |
-| low      | 1024            | Fast reasoning |
-| medium   | 8192            | Medium reasoning depth |
-| high     | 24576           | Deep reasoning |
-| xhigh    | 32768           | Deeper reasoning |
+用户在模型名后附加 `(value)`，其中 value 可以是：
+- 数值预算：`claude-sonnet-4(16384)` → 16384 tokens（提供商原生 tokens，钳制到模型支持范围）
+- 努力等级：`gpt-5.1(high)` → high 等级（不区分大小写）
+- 空括号 `()` 会被移除并忽略
 
-### Model Name Suffix Syntax
+## 重要约束
 
-Users append `(value)` to model names where value can be:
-- Numeric budget: `claude-sonnet-4(16384)` → 16384 tokens (provider-native tokens, clamped to model's supported range)
-- Effort level: `gpt-5.1(high)` → high effort (case-insensitive)
-- Empty parentheses `()` are removed and ignored
+- **兼容性：** 必须与 CLIProxyAPI 的 Thinking 解析逻辑完全匹配
+- **性能：** SSE 流式传输不得缓冲；立即转发数据块
+- **透明性：** 所有头部（尤其是认证头）必须原样转发
+- **模型同步：** 需定期对照 CLIProxyAPI 源码更新模型定义
 
-## Important Constraints
+## 外部依赖
 
-- **Compatibility:** Must match CLIProxyAPI's Thinking parsing logic exactly
-- **Performance:** SSE streaming must not buffer; forward chunks immediately
-- **Transparency:** All headers (especially auth) must be forwarded unchanged
-- **Build dependency:** Requires network access at compile time to fetch CLIProxyAPI sources
+### 上游服务
 
-## External Dependencies
+- **CLIProxyAPI：** 主要上游服务器（默认：`cpa.1percentsync.games`）
 
-### Upstream Services
+### 模型定义参考
 
-- **CLIProxyAPI:** Primary upstream server (default: `cpa.1percentsync.games`)
-- **GitHub Raw:** Source files fetched at compile time from `https://raw.githubusercontent.com/1PercentSync/CLIProxyAPI/main/`
+开发时需参考以下 CLIProxyAPI 源文件维护 Rust 模型定义：
+- `internal/registry/model_definitions.go` - 包含所有静态模型定义及 `ThinkingSupport` 配置
+- `internal/registry/model_registry.go` - 包含 `ModelInfo` 和 `ThinkingSupport` 结构体定义
 
-### Source Files Parsed at Build Time
+## 设计决策（与 CLIProxyAPI 不同）
 
-- `internal/registry/model_definitions.go` - All static model definitions with `ThinkingSupport` configuration
-- `internal/util/gemini_thinking.go` - Gemini 3 model detection regexes and level mappings
+### 未知模型带思考后缀的处理
 
-## Design Decisions (Differs from CLIProxyAPI)
+**CLIProxyAPI 行为：** 允许未知模型使用思考后缀
 
-### Unknown Models with Thinking Suffix
+**RS-Proxy 行为：** 对未知模型带思考后缀返回 HTTP 400 错误
 
-**CLIProxyAPI behavior:** Allows thinking suffixes on unknown models
-
-**RS-Proxy behavior:** Returns HTTP 400 error for unknown models with thinking suffix
-
-**Rationale:**
-- Ensures predictable behavior - no silent failures with incorrect configurations
-- Prevents sending requests with wrong `max_tokens` values that may cause upstream errors
-- Forces users to use known, supported models for thinking features
-- Simplifies implementation by not needing fallback logic
+**理由：**
+- 确保行为可预测——不会静默失败并产生错误配置
+- 防止发送错误的 `max_tokens` 值导致上游错误
+- 强制用户使用已知的、支持思考特性的模型
+- 无需回退逻辑，简化实现

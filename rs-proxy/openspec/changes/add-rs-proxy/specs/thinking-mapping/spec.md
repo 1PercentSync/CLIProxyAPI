@@ -1,65 +1,69 @@
 ## ADDED Requirements
 
-### Requirement: Effort to Budget Mapping
-The system SHALL map effort level strings to token budgets matching CLIProxyAPI.
+### Requirement: 努力等级到预算映射
 
-**File:** `src/thinking/models.rs`
+The system SHALL将努力等级字符串映射到 token 预算，与 CLIProxyAPI 保持一致。
 
-#### Scenario: Standard effort levels
-- **WHEN** effort level is one of: none, auto, minimal, low, medium, high, xhigh
-- **THEN** the system SHALL map to budgets: 0, -1, 512, 1024, 8192, 24576, 32768 respectively
-- **AND** apply clamping rules (none→0 clamped to min if 0 not allowed; auto→-1 or clamped if not supported)
+**文件：** `src/thinking/models.rs`
 
-### Requirement: Budget to Effort Reverse Mapping
-The system SHALL map numeric budgets back to effort level strings (needed for OpenAI protocol).
+#### Scenario: 标准努力等级
+- **当** 努力等级为以下之一：none, auto, minimal, low, medium, high, xhigh
+- **则** The system SHALL分别映射到预算：0, -1, 512, 1024, 8192, 24576, 32768
+- **且** 应用钳制规则（none→0 若不允许 0 则钳制到最小值；auto→-1 或不支持时钳制）
 
-**File:** `src/thinking/models.rs`
+### Requirement: 预算到努力等级反向映射
 
-#### Scenario: Budget to effort conversion
-- **WHEN** a numeric budget needs to be converted to an effort level (e.g., for OpenAI)
-- **THEN** the system SHALL use these ranges:
-  - 0 → `"none"` (or model's lowest supported level if 0 not allowed)
+The system SHALL将数值预算映射回努力等级字符串（OpenAI 协议需要）。
+
+**文件：** `src/thinking/models.rs`
+
+#### Scenario: 预算到努力等级转换
+- **当** 需要将数值预算转换为努力等级时（如 OpenAI）
+- **则** The system SHALL使用以下范围：
+  - 0 → `"none"`（或若不允许 0 则使用模型支持的最低等级）
   - -1 → `"auto"`
   - 1 - 1024 → `"low"`
   - 1025 - 8192 → `"medium"`
   - 8193 - 24576 → `"high"`
-  - 24577+ → model's highest supported level (default `"xhigh"`)
+  - 24577+ → 模型支持的最高等级（默认 `"xhigh"`）
 
-### Requirement: Thinking Injection for Models with Thinking Support
-The system SHALL only inject thinking configuration for models that declare thinking support.
+### Requirement: 支持思考的模型的思考注入
 
-**File:** `src/thinking/models.rs`
+The system SHALL仅为声明支持思考的模型注入思考配置。
 
-#### Scenario: Model in registry without thinking support
-- **WHEN** model exists in registry but does not declare thinking support
-- **AND** has suffix `(high)`
-- **THEN** the system SHALL strip the brackets and use base model name
-- **AND** NOT inject any thinking fields
+**文件：** `src/thinking/models.rs`
 
-#### Scenario: Model not in registry with thinking suffix
-- **WHEN** model has thinking suffix (e.g., `(high)`, `(16384)`)
-- **AND** model does NOT exist in registry
-- **THEN** the system SHALL return HTTP 400 error with message indicating unknown model
+#### Scenario: 注册表中不支持思考的模型
+- **当** 模型存在于注册表中但未声明思考支持
+- **且** 带有后缀 `(high)`
+- **则** The system SHALL去除括号并使用基础模型名称
+- **且** 不注入任何思考字段
 
-> **⚠️ DESIGN DECISION - DIFFERS FROM CLIProxyAPI:**
-> RS-Proxy requires models to be in the registry to apply thinking configuration.
-> CLIProxyAPI allows thinking suffixes on unknown models and uses fallback behavior.
-> RS-Proxy instead returns an error, ensuring predictable behavior and preventing
-> silent failures with incorrect configurations (e.g., wrong max_tokens values).
+#### Scenario: 不在注册表中的模型带思考后缀
+- **当** 模型带有思考后缀（如 `(high)`、`(16384)`）
+- **且** 模型不存在于注册表中
+- **则** The system SHALL返回 HTTP 400 错误，说明模型未知
 
-### Requirement: Discrete Level Validation
-The system SHALL validate effort levels for models using discrete levels.
+> **⚠️ 设计决策 - 与 CLIProxyAPI 不同：**
+> RS-Proxy 要求模型必须在注册表中才能应用思考配置。
+> CLIProxyAPI 允许未知模型使用思考后缀并采用回退行为。
+> RS-Proxy 返回错误，确保行为可预测，防止错误配置导致的静默失败
+>（如错误的 max_tokens 值）。
 
-**File:** `src/thinking/models.rs`
+### Requirement: 离散等级验证
 
-#### Scenario: Invalid level for discrete model
-- **WHEN** model uses discrete levels and suffix contains unsupported level
-- **THEN** the system SHALL return HTTP 400 error
+The system SHALL验证使用离散等级的模型的努力等级。
 
-### Implementation Notes
+**文件：** `src/thinking/models.rs`
+
+#### Scenario: 离散模型使用无效等级
+- **当** 模型使用离散等级且后缀包含不支持的等级时
+- **则** The system SHALL返回 HTTP 400 错误
+
+### 实现说明
 
 ```rust
-/// Level to budget (forward mapping)
+/// 等级到预算（正向映射）
 pub fn level_to_budget(level: &str) -> Option<i32> {
     match level.to_lowercase().as_str() {
         "none" => Some(0),
@@ -73,7 +77,7 @@ pub fn level_to_budget(level: &str) -> Option<i32> {
     }
 }
 
-/// Budget to effort (reverse mapping, needed for OpenAI protocol)
+/// 预算到努力等级（反向映射，OpenAI 协议需要）
 pub fn budget_to_effort(budget: i32) -> &'static str {
     match budget {
         0 => "none",
@@ -82,14 +86,14 @@ pub fn budget_to_effort(budget: i32) -> &'static str {
         1025..=8192 => "medium",
         8193..=24576 => "high",
         _ if budget > 24576 => "xhigh",
-        _ => "medium",  // fallback for unexpected values
+        _ => "medium",  // 意外值的回退
     }
 }
 
-/// Budget to effort with model awareness (uses model's highest supported level)
+/// 带模型感知的预算到努力等级（使用模型支持的最高等级）
 pub fn budget_to_effort_for_model(model: &str, budget: i32) -> String {
     if budget > 24576 {
-        // Return model's highest supported level, or "xhigh" as default
+        // 返回模型支持的最高等级，或默认 "xhigh"
         if let Some(levels) = get_model_thinking_levels(model) {
             return levels.last().unwrap_or(&"xhigh").to_string();
         }

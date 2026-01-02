@@ -1,71 +1,73 @@
-## Context
+## 背景
 
-RS-Proxy is a standalone lightweight Rust reverse proxy that transparently forwards API requests while parsing and applying thinking configuration from model name suffixes. It can forward to any upstream API server (default: CLIProxyAPI instance).
+RS-Proxy 是一个独立的轻量级 Rust 反向代理，透明转发 API 请求，同时解析并应用来自模型名称后缀的思考配置。它可转发到任意上游 API 服务器（默认：CLIProxyAPI 实例）。
 
-**Important:** RS-Proxy is NOT a middleware specifically for CLIProxyAPI. It is a general-purpose proxy that aligns its thinking configuration logic with CLIProxyAPI for consistency.
+**重要说明：** RS-Proxy 不是专门为 CLIProxyAPI 设计的中间件。它是通用代理，其思考配置逻辑与 CLIProxyAPI 保持一致以确保兼容性。
 
-**Constraints:**
-- Must align with CLIProxyAPI's thinking suffix parsing and injection logic
-- Must support SSE streaming without buffering
-- Must compile model support data from CLIProxyAPI source at build time
-- Does NOT provide protocol conversion - only injects thinking configuration
+**约束条件：**
+- 必须与 CLIProxyAPI 的思考后缀解析和注入逻辑保持一致
+- 必须支持 SSE 流式传输且不缓冲
+- 模型定义需手动维护，对照 CLIProxyAPI 源码
+- 不提供协议转换——仅注入思考配置
 
-**Stakeholders:**
-- API clients wanting simplified thinking configuration via model names
-- Users who need a lightweight local proxy with thinking injection support
+**利益相关方：**
+- 希望通过模型名称简化思考配置的 API 客户端
+- 需要支持思考注入的轻量级本地代理的用户
 
-## Goals / Non-Goals
+## 目标 / 非目标
 
-**Goals:**
-- Parse model suffixes like `model(high)` or `model(16384)`
-- Inject protocol-appropriate thinking configuration
-- Transparent proxying with SSE support
-- Model list enhancement with thinking variants
+**目标：**
+- 解析模型后缀如 `model(high)` 或 `model(16384)`
+- 注入协议适配的思考配置
+- 支持 SSE 的透明代理
+- 为模型列表添加思考变体
 
-**Non-Goals:**
-- Authentication/authorization (transparent passthrough only)
-- Request caching
-- Load balancing
-- Model-specific prompt transformations
+**非目标：**
+- 认证/授权（仅透明透传）
+- 请求缓存
+- 负载均衡
+- 模型特定的提示词转换
 
-## Decisions
+## 决策
 
-### Decision 1: Use axum as HTTP framework
-- **Why:** Lightweight, async-first, excellent tower ecosystem integration
-- **Alternatives:** actix-web (heavier), warp (less ergonomic), hyper (too low-level)
+### 决策 1：使用 axum 作为 HTTP 框架
+- **原因：** 轻量级、异步优先、与 tower 生态系统完美集成
+- **备选方案：** actix-web（较重）、warp（不够人性化）、hyper（过于底层）
 
-### Decision 2: Compile-time data generation via build.rs
-- **Why:** Avoids runtime config files, ensures type safety
-- **Alternatives:** Runtime config parsing (adds startup cost, error handling complexity)
+### 决策 2：静态模型注册表
+- **做法：** 在开发时对照 CLIProxyAPI 的 `internal/registry/model_definitions.go` 手动编写 Rust 模型定义
+- **原因：** 简化构建流程，无需网络依赖；类型安全；更容易调试和维护
+- **备选方案：** 编译时自动获取（增加构建复杂度，需要网络访问，解析可能失败）
 
-### Decision 3: Protocol detection strategy
-- **Primary:** URL path determines protocol (e.g., `/v1/messages` → Anthropic, `/v1beta/models/*` → Gemini, `/v1/chat/completions` → OpenAI)
-- **Exception:** `/v1/models` endpoint is shared by OpenAI and Anthropic, so headers are used: `x-api-key` → Anthropic, `Authorization: Bearer` → OpenAI
-- **Why:** Minimizes header inspection overhead; most endpoints have unique paths
+### 决策 3：协议检测策略
+- **主要方式：** URL 路径决定协议（如 `/v1/messages` → Anthropic，`/v1beta/models/*` → Gemini，`/v1/chat/completions` → OpenAI）
+- **例外情况：** `/v1/models` 端点被 OpenAI 和 Anthropic 共用，因此使用请求头判断：`x-api-key` → Anthropic，`Authorization: Bearer` → OpenAI
+- **原因：** 最小化请求头检查开销；大多数端点有唯一路径
 
-### Decision 4: Transparent SSE forwarding
-- **Why:** Minimizes latency and complexity
-- **Approach:** Use reqwest's `bytes_stream()` and forward chunks directly
+### 决策 4：透明 SSE 转发
+- **原因：** 最小化延迟和复杂度
+- **实现方式：** 使用 reqwest 的 `bytes_stream()` 直接转发数据块
 
-### Decision 5: Thinking injection rules (aligned with CLIProxyAPI)
-Protocol-specific injection behavior matching CLIProxyAPI's implementation
+### 决策 5：思考注入规则（与 CLIProxyAPI 对齐）
+协议特定的注入行为与 CLIProxyAPI 实现匹配
 
-**Important notes:**
-- Budget values are clamped to model's supported range
-- Models using discrete levels validate the level; unsupported values return 400
+**重要说明：**
+- 预算值会被钳制到模型支持的范围内
+- 使用离散等级的模型会验证等级；不支持的值返回 400
 
-### Decision 6: Model list enhancement (differs from CLIProxyAPI)
-- RS-Proxy enhances `/v1/models` response by adding thinking level variants (e.g., `model(low)`, `model(high)`)
-- CLIProxyAPI does NOT include these variants in its model list response
-- This is an intentional difference to help clients discover available thinking configurations
+### 决策 6：模型列表增强（与 CLIProxyAPI 不同）
+- RS-Proxy 通过添加思考等级变体（如 `model(low)`、`model(high)`）增强 `/v1/models` 响应
+- CLIProxyAPI 的模型列表响应不包含这些变体
+- 这是有意为之的差异，帮助客户端发现可用的思考配置
 
-## Risks / Trade-offs
+## 风险 / 权衡
 
-| Risk | Mitigation |
-|------|------------|
-| Large streaming responses | No buffering, direct passthrough minimizes memory |
-| Protocol detection ambiguity | Clear header-based rules |
+| 风险 | 缓解措施 |
+|------|----------|
+| 大型流式响应 | 不缓冲，直接透传最小化内存占用 |
+| 协议检测歧义 | 明确的基于请求头的规则 |
+| 模型定义过时 | 定期对照 CLIProxyAPI 源码更新，记录同步日期 |
 
-## Migration Plan
+## 迁移计划
 
-N/A - New project, no migration required.
+不适用——新项目，无需迁移。

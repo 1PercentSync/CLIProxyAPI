@@ -1,40 +1,41 @@
-# Change: Add Rust Reverse Proxy with Thinking Configuration Support
+# 变更：添加支持思考配置的 Rust 反向代理
 
-## Why
+## 原因
 
-Users need a lightweight, standalone reverse proxy that can parse thinking configuration from model name suffixes (e.g., `model(high)` or `model(16384)`) and inject the appropriate configuration into API requests. This allows clients to control thinking/reasoning behavior without modifying their request payloads.
+用户需要一个轻量级、独立的反向代理，能够从模型名称后缀（如 `model(high)` 或 `model(16384)`）解析思考配置并注入到 API 请求中。这使客户端无需修改请求体即可控制思考/推理行为。
 
-## What Changes
+## 变更内容
 
-- Add new Rust project `rs-proxy` as a standalone reverse proxy (can forward to any upstream, not just CLIProxyAPI)
-- Implement model name suffix parsing aligned with CLIProxyAPI's logic for consistency
-- Support OpenAI, Anthropic, and Gemini API protocols (protocol determined by URL path, except `/v1/models` which uses headers)
-- Inject thinking configuration aligned with CLIProxyAPI's behavior:
-  - **OpenAI/Codex/Qwen/iFlow/OpenRouter:** `reasoning_effort` (chat) or `reasoning.effort` (Responses); numeric budgets are converted to level strings
-  - **Anthropic:** `thinking.type=enabled` + `thinking.budget_tokens`; `max_tokens` set to model's `MaxCompletionTokens`; `(none)` results in no thinking config
-  - **Gemini 2.5:** `thinkingBudget` (numeric) + auto-set `include_thoughts=true`
-  - **Gemini 3:** `thinkingLevel` (string: low/medium/high) + auto-set `includeThoughts=true`
-- Enhance model list responses with thinking level variants (this differs from CLIProxyAPI which does not include variants)
-- Handle SSE streaming responses correctly
-- Fetch model support data from CLIProxyAPI at compile time (`internal/registry/model_definitions.go`)
+- 新增 Rust 项目 `rs-proxy` 作为独立反向代理（可转发到任意上游，不仅限于 CLIProxyAPI）
+- 实现模型名称后缀解析，与 CLIProxyAPI 的逻辑保持一致
+- 手动维护模型注册表，对照 CLIProxyAPI 的 `internal/registry/model_definitions.go` 编写 Rust 模型定义
+- 支持 OpenAI、Anthropic 和 Gemini API 协议（协议由 URL 路径决定，`/v1/models` 除外，使用请求头判断）
+- 思考配置注入与 CLIProxyAPI 行为对齐：
+  - **OpenAI/Codex/Qwen/iFlow/OpenRouter：** `reasoning_effort`（chat）或 `reasoning.effort`（Responses）；数值预算转换为等级字符串
+  - **Anthropic：** `thinking.type=enabled` + `thinking.budget_tokens`；`max_tokens` 设为模型的 `MaxCompletionTokens`；`(none)` 不设置思考配置
+  - **Gemini 2.5：** `thinkingBudget`（数值）+ 自动设置 `include_thoughts=true`
+  - **Gemini 3：** `thinkingLevel`（字符串：low/medium/high）+ 自动设置 `includeThoughts=true`
+- 为模型列表响应添加思考等级变体（此功能与 CLIProxyAPI 不同，后者不包含变体）
+- 正确处理 SSE 流式响应
 
-**Note:** RS-Proxy does NOT provide protocol conversion - it only injects thinking configuration into the original protocol format.
+**注意：** RS-Proxy 不提供协议转换——仅向原始协议格式注入思考配置。
 
-## Design Decisions (Differs from CLIProxyAPI)
+## 设计决策（与 CLIProxyAPI 不同）
 
-### Unknown Models with Thinking Suffix
+### 未知模型带思考后缀的处理
 
-- **CLIProxyAPI:** Allows thinking suffixes on unknown models, uses fallback behavior
-- **RS-Proxy:** Returns HTTP 400 error for unknown models with thinking suffix
+- **CLIProxyAPI：** 允许未知模型使用思考后缀，采用回退行为
+- **RS-Proxy：** 对未知模型带思考后缀返回 HTTP 400 错误
 
-**Rationale:** Ensures predictable behavior, prevents silent failures with incorrect configurations.
+**理由：** 确保行为可预测，防止错误配置导致的静默失败。
 
-## Impact
+## 影响
 
-- Affected specs (new capabilities):
+- 受影响的规格（新功能）：
   - `cli` → `src/config.rs`
   - `thinking-parser` → `src/thinking/parser.rs`
   - `thinking-mapping` → `src/thinking/models.rs`
+  - `model-registry` → `src/models/registry.rs`
   - `protocol-detection` → `src/protocol/mod.rs`
   - `protocol-openai` → `src/protocol/openai.rs`
   - `protocol-anthropic` → `src/protocol/anthropic.rs`
@@ -42,6 +43,5 @@ Users need a lightweight, standalone reverse proxy that can parse thinking confi
   - `proxy-streaming` → `src/proxy/streaming.rs`
   - `proxy-headers` → `src/proxy/client.rs`
   - `models-enhancer` → `src/models/enhancer.rs`
-  - `build` → `build.rs`
-- Affected code: New project in `/rs-proxy` directory
-- Dependencies: tokio, axum, reqwest, argh, serde_json, tower-http, regex, futures, thiserror
+- 受影响的代码：`/rs-proxy` 目录下的新项目
+- 依赖：tokio, axum, reqwest, argh, serde_json, tower-http, futures, thiserror

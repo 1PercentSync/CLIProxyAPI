@@ -1,37 +1,38 @@
 ## ADDED Requirements
 
-### Requirement: CLI Argument Parsing
-The system SHALL accept command-line arguments for configuration using argh.
+### Requirement: 命令行参数解析
 
-**File:** `src/config.rs`
+The system SHALL使用 argh 接受命令行配置参数。
 
-#### Scenario: Default configuration
-- **WHEN** rs-proxy is started without arguments
-- **THEN** it SHALL listen on port 6356
-- **AND** use base URL "cpa.1percentsync.games"
+**文件：** `src/config.rs`
 
-#### Scenario: Custom port
-- **WHEN** rs-proxy is started with `-p 8080` or `--port 8080`
-- **THEN** it SHALL listen on port 8080
+#### Scenario: 默认配置
+- **当** rs-proxy 无参数启动时
+- **则** 应监听端口 6356
+- **且** 使用基础 URL `"cpa.1percentsync.games"`
 
-#### Scenario: Custom base URL
-- **WHEN** rs-proxy is started with `-b example.com` or `--base-url example.com`
-- **THEN** it SHALL proxy requests to `https://example.com`
+#### Scenario: 自定义端口
+- **当** rs-proxy 以 `-p 8080` 或 `--port 8080` 启动时
+- **则** 应监听端口 8080
 
-### Implementation Notes
+#### Scenario: 自定义基础 URL
+- **当** rs-proxy 以 `-b example.com` 或 `--base-url example.com` 启动时
+- **则** 应将请求代理到 `https://example.com`
+
+### 实现说明
 
 ```rust
 use argh::FromArgs;
 
 #[derive(FromArgs)]
-/// RS-Proxy: Thinking configuration injection proxy
+/// RS-Proxy：思考配置注入代理
 struct Args {
     #[argh(option, short = 'p', default = "6356")]
-    /// port to listen on
+    /// 监听端口
     port: u16,
 
     #[argh(option, short = 'b', default = "String::from(\"cpa.1percentsync.games\")")]
-    /// upstream base URL
+    /// 上游基础 URL
     base_url: String,
 }
 ```

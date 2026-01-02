@@ -1,43 +1,44 @@
 ## ADDED Requirements
 
-### Requirement: Model Name Suffix Parsing
-The system SHALL parse thinking configuration from model name suffixes aligned with CLIProxyAPI's `NormalizeThinkingModel()` logic.
+### Requirement: 模型名称后缀解析
 
-**File:** `src/thinking/parser.rs`
+The system SHALL从模型名称后缀解析思考配置，与 CLIProxyAPI 的 `NormalizeThinkingModel()` 逻辑保持一致。
 
-#### Scenario: Numeric budget suffix
-- **WHEN** a request contains model name `claude-sonnet-4(16384)`
-- **THEN** the system SHALL extract base model `claude-sonnet-4`
-- **AND** extract thinking budget `16384` (provider-native tokens, clamped to model's supported range)
+**文件：** `src/thinking/parser.rs`
 
-#### Scenario: String effort level suffix
-- **WHEN** a request contains model name `gpt-5.1(high)`
-- **THEN** the system SHALL extract base model `gpt-5.1`
-- **AND** extract reasoning effort `high` (case-insensitive)
+#### Scenario: 数值预算后缀
+- **当** 请求包含模型名称 `claude-sonnet-4(16384)` 时
+- **则** The system SHALL提取基础模型 `claude-sonnet-4`
+- **且** 提取思考预算 `16384`（提供商原生 tokens，钳制到模型支持范围）
 
-#### Scenario: No suffix
-- **WHEN** a request contains model name `claude-sonnet-4` without parentheses
-- **THEN** the system SHALL use the model name as-is
-- **AND** not inject any thinking configuration
+#### Scenario: 字符串努力等级后缀
+- **当** 请求包含模型名称 `gpt-5.1(high)` 时
+- **则** The system SHALL提取基础模型 `gpt-5.1`
+- **且** 提取推理努力等级 `high`（不区分大小写）
 
-#### Scenario: Empty parentheses
-- **WHEN** a request contains model name `model-name()`
-- **THEN** the system SHALL ignore the empty parentheses
-- **AND** use `model-name` as the model name (brackets stripped)
+#### Scenario: 无后缀
+- **当** 请求包含不带括号的模型名称 `claude-sonnet-4` 时
+- **则** The system SHALL原样使用模型名称
+- **且** 不注入任何思考配置
 
-#### Scenario: Provider prefix format
-- **WHEN** a request contains model name `openrouter://gemini-3-pro-preview(high)`
-- **THEN** the system SHALL extract base model `openrouter://gemini-3-pro-preview`
-- **AND** extract reasoning effort `high`
+#### Scenario: 空括号
+- **当** 请求包含模型名称 `model-name()` 时
+- **则** The system SHALL忽略空括号
+- **且** 使用 `model-name` 作为模型名称（去除括号）
 
-### Implementation Notes
+#### Scenario: 提供商前缀格式
+- **当** 请求包含模型名称 `openrouter://gemini-3-pro-preview(high)` 时
+- **则** The system SHALL提取基础模型 `openrouter://gemini-3-pro-preview`
+- **且** 提取推理努力等级 `high`
 
-Parser returns a struct like:
+### 实现说明
+
+解析器返回如下结构体：
 ```rust
 pub enum ThinkingValue {
-    None,                    // No suffix or empty ()
-    Budget(i32),             // Numeric value like 16384
-    Level(String),           // Level like "high", "auto", "none"
+    None,                    // 无后缀或空 ()
+    Budget(i32),             // 数值如 16384
+    Level(String),           // 等级如 "high"、"auto"、"none"
 }
 
 pub struct ParsedModel {

@@ -1,93 +1,95 @@
 ## ADDED Requirements
 
-### Requirement: Anthropic Protocol Thinking Injection
-The system SHALL inject thinking configuration for Anthropic protocol aligned with CLIProxyAPI.
+### Requirement: Anthropic 协议思考注入
 
-**File:** `src/protocol/anthropic.rs`
+The system SHALL为 Anthropic 协议注入思考配置，与 CLIProxyAPI 保持一致。
 
-#### Scenario: Anthropic with effort level
-- **WHEN** model has suffix `(high)` and protocol is Anthropic
-- **AND** model exists in registry with thinking support
-- **THEN** the system SHALL set `thinking.type` to `enabled`
-- **AND** set `thinking.budget_tokens` to `24576`
-- **AND** set `model` field to the base model name
-- **AND** ensure `max_tokens` is sufficient (see max_tokens adjustment below)
+**文件：** `src/protocol/anthropic.rs`
 
-#### Scenario: Anthropic with numeric budget
-- **WHEN** model has suffix `(16384)` and protocol is Anthropic
-- **AND** model exists in registry with thinking support
-- **THEN** the system SHALL set `thinking.type` to `enabled`
-- **AND** set `thinking.budget_tokens` to `16384` (clamped to model range)
+#### Scenario: 带努力等级的 Anthropic
+- **当** 模型带有后缀 `(high)` 且协议为 Anthropic 时
+- **且** 模型存在于注册表中并支持思考
+- **则** The system SHALL将 `thinking.type` 设为 `enabled`
+- **且** 将 `thinking.budget_tokens` 设为 `24576`
+- **且** 将 `model` 字段设为基础模型名称
+- **且** 确保 `max_tokens` 足够（见下方 max_tokens 调整）
 
-#### Scenario: Anthropic with none level
-- **WHEN** model has suffix `(none)` and protocol is Anthropic
-- **THEN** the system SHALL NOT set any thinking configuration
-- **AND** return the request body unchanged (no `thinking.type`, no `thinking.budget_tokens`)
+#### Scenario: 带数值预算的 Anthropic
+- **当** 模型带有后缀 `(16384)` 且协议为 Anthropic 时
+- **且** 模型存在于注册表中并支持思考
+- **则** The system SHALL将 `thinking.type` 设为 `enabled`
+- **且** 将 `thinking.budget_tokens` 设为 `16384`（钳制到模型范围内）
 
-#### Scenario: Anthropic with zero or negative budget
-- **WHEN** model has budget <= 0 after processing
-- **THEN** the system SHALL NOT set any thinking configuration
+#### Scenario: 带 none 等级的 Anthropic
+- **当** 模型带有后缀 `(none)` 且协议为 Anthropic 时
+- **则** The system SHALL不设置任何思考配置
+- **且** 原样返回请求体（无 `thinking.type`，无 `thinking.budget_tokens`）
 
-#### Scenario: Unknown model with thinking suffix
-- **WHEN** model has thinking suffix (e.g., `(high)`, `(16384)`)
-- **AND** model does NOT exist in registry
-- **THEN** the system SHALL return HTTP 400 error with message indicating unknown model
+#### Scenario: 带零或负预算的 Anthropic
+- **当** 处理后模型的预算 <= 0 时
+- **则** The system SHALL不设置任何思考配置
 
-> **⚠️ DESIGN DECISION - DIFFERS FROM CLIProxyAPI:**
-> RS-Proxy requires models to be in the registry to apply thinking configuration.
-> CLIProxyAPI falls back to `budget + 4000` for max_tokens when registry lookup fails.
-> RS-Proxy instead returns an error for unknown models with thinking suffixes.
-> This ensures predictable behavior and prevents silent failures with incorrect configurations.
+#### Scenario: 未知模型带思考后缀
+- **当** 模型带有思考后缀（如 `(high)`、`(16384)`）
+- **且** 模型不存在于注册表中
+- **则** The system SHALL返回 HTTP 400 错误，说明模型未知
 
-### Requirement: max_tokens Adjustment for Thinking
-The system SHALL ensure `max_tokens` is sufficient when thinking is enabled.
+> **⚠️ 设计决策 - 与 CLIProxyAPI 不同：**
+> RS-Proxy 要求模型必须在注册表中才能应用思考配置。
+> CLIProxyAPI 在注册表查找失败时使用 `budget + 4000` 作为 max_tokens 的回退值。
+> RS-Proxy 对未知模型带思考后缀返回错误。
+> 这确保了行为可预测，防止错误配置导致的静默失败。
 
-**File:** `src/protocol/anthropic.rs`
+### Requirement: 思考启用时的 max_tokens 调整
 
-#### Scenario: max_tokens adjustment
-- **WHEN** thinking is enabled with `budget_tokens > 0`
-- **AND** model has `MaxCompletionTokens` in registry
-- **THEN** the system SHALL set `max_tokens` to `MaxCompletionTokens` if current value is lower
+The system SHALL确保启用思考时 `max_tokens` 足够。
 
-> **Note:** Unlike CLIProxyAPI which has a fallback of `budget + 4000`, RS-Proxy does not need
-> this fallback because unknown models are rejected before reaching this point.
+**文件：** `src/protocol/anthropic.rs`
 
-### Implementation Notes
+#### Scenario: max_tokens 调整
+- **当** 思考启用且 `budget_tokens > 0` 时
+- **且** 模型在注册表中有 `MaxCompletionTokens`
+- **则** The system SHALL将 `max_tokens` 设为 `MaxCompletionTokens`（如当前值较低）
+
+> **说明：** 与 CLIProxyAPI 使用 `budget + 4000` 回退不同，RS-Proxy 不需要此回退，
+> 因为未知模型在到达此处之前就会被拒绝。
+
+### 实现说明
 
 ```rust
-// First, check if model exists in registry
+// 首先，检查模型是否存在于注册表中
 let model_info = registry.get_model_info(&base_model)
     .ok_or_else(|| Error::UnknownModel(base_model.clone()))?;
 
-// Check if model supports thinking
+// 检查模型是否支持思考
 if model_info.thinking.is_none() {
-    // Model doesn't support thinking, just strip brackets and forward
+    // 模型不支持思考，仅去除括号并转发
     body["model"] = base_model;
     return Ok(body);
 }
 
-// Only apply thinking config if budget > 0
+// 仅当 budget > 0 时应用思考配置
 if budget > 0 {
     body["model"] = base_model;
     body["thinking"]["type"] = "enabled";
     body["thinking"]["budget_tokens"] = budget;
 
-    // Set max_tokens to model's MaxCompletionTokens
+    // 将 max_tokens 设为模型的 MaxCompletionTokens
     let current_max = body["max_tokens"].as_i64().unwrap_or(0);
-    let required_max = model_info.max_completion_tokens as i64;  // e.g., 64000 for Claude 4.5
+    let required_max = model_info.max_completion_tokens as i64;  // 如 Claude 4.5 为 64000
 
     if current_max < required_max {
         body["max_tokens"] = required_max;
     }
 } else {
-    // budget <= 0 (including "none" level which maps to 0)
-    // Do NOT set any thinking configuration, return body unchanged
+    // budget <= 0（包括映射到 0 的 "none" 等级）
+    // 不设置任何思考配置，原样返回 body
     body["model"] = base_model;
 }
 ```
 
-**Critical:**
-- Level strings are first converted to budgets via the mapping table
-- `(none)` maps to budget 0, which means NO thinking config is set (not `budget_tokens = 0`)
-- Anthropic API requires `max_tokens > thinking.budget_tokens`; violating this returns HTTP 400
-- **RS-Proxy rejects unknown models with thinking suffixes (differs from CLIProxyAPI)**
+**关键点：**
+- 等级字符串首先通过映射表转换为预算
+- `(none)` 映射到预算 0，意味着不设置思考配置（而非 `budget_tokens = 0`）
+- Anthropic API 要求 `max_tokens > thinking.budget_tokens`；违反此规则返回 HTTP 400
+- **RS-Proxy 拒绝未知模型带思考后缀（与 CLIProxyAPI 不同）**

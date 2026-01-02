@@ -1,33 +1,34 @@
 ## ADDED Requirements
 
-### Requirement: Protocol Detection
-The system SHALL detect API protocol from URL path, using headers only for ambiguous endpoints.
+### Requirement: 协议检测
 
-**File:** `src/protocol/mod.rs`
+The system SHALL从 URL 路径检测 API 协议，仅对歧义端点使用请求头判断。
 
-#### Scenario: OpenAI detection by path
-- **WHEN** request path is `/v1/chat/completions` or `/v1/responses`
-- **THEN** the system SHALL treat it as OpenAI protocol
+**文件：** `src/protocol/mod.rs`
 
-#### Scenario: Anthropic detection by path
-- **WHEN** request path is `/v1/messages`
-- **THEN** the system SHALL treat it as Anthropic protocol
+#### Scenario: 通过路径检测 OpenAI
+- **当** 请求路径为 `/v1/chat/completions` 或 `/v1/responses` 时
+- **则** The system SHALL将其视为 OpenAI 协议
 
-#### Scenario: Gemini detection by path
-- **WHEN** request path matches `/v1beta/models/*`
-- **THEN** the system SHALL treat it as Gemini protocol
+#### Scenario: 通过路径检测 Anthropic
+- **当** 请求路径为 `/v1/messages` 时
+- **则** The system SHALL将其视为 Anthropic 协议
 
-#### Scenario: Shared endpoint disambiguation by headers
-- **WHEN** request path is `/v1/models`
-- **AND** request contains `x-api-key` header
-- **THEN** the system SHALL treat it as Anthropic protocol
+#### Scenario: 通过路径检测 Gemini
+- **当** 请求路径匹配 `/v1beta/models/*` 时
+- **则** The system SHALL将其视为 Gemini 协议
 
-#### Scenario: Shared endpoint fallback to OpenAI
-- **WHEN** request path is `/v1/models`
-- **AND** request contains `Authorization: Bearer` header without `x-api-key`
-- **THEN** the system SHALL treat it as OpenAI protocol
+#### Scenario: 通过请求头区分共享端点
+- **当** 请求路径为 `/v1/models` 时
+- **且** 请求包含 `x-api-key` 头
+- **则** The system SHALL将其视为 Anthropic 协议
 
-### Implementation Notes
+#### Scenario: 共享端点回退到 OpenAI
+- **当** 请求路径为 `/v1/models` 时
+- **且** 请求包含 `Authorization: Bearer` 头但不含 `x-api-key`
+- **则** The system SHALL将其视为 OpenAI 协议
+
+### 实现说明
 
 ```rust
 pub enum Protocol {
@@ -48,9 +49,9 @@ pub fn detect_protocol(path: &str, headers: &HeaderMap) -> Protocol {
                 Protocol::OpenAI
             }
         }
-        _ => Protocol::OpenAI, // fallback
+        _ => Protocol::OpenAI, // 回退
     }
 }
 ```
 
-**Important:** Headers are ONLY used for `/v1/models` endpoint disambiguation. All other endpoints use URL path only.
+**重要说明：** 请求头仅用于 `/v1/models` 端点的协议区分。其他所有端点仅使用 URL 路径。
