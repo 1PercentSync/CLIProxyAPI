@@ -2,123 +2,114 @@
 
 ### Requirement: Gemini 协议思考注入
 
-The system SHALL为 Gemini 协议注入思考配置，与 CLIProxyAPI 保持一致。
+The system SHALL为 Gemini 协议注入思考配置。
 
 **文件：** `src/protocol/gemini.rs`
 
-#### Scenario: 带思考预算的 Gemini 2.5
-- **当** 模型为 Gemini 2.5 变体（如 `gemini-2.5-pro`、`gemini-2.5-flash`）
-- **且** 带有思考后缀
-- **则** The system SHALL将 `generationConfig.thinkingConfig.thinkingBudget` 设为数值
-- **且** 若未显式设置，将 `generationConfig.thinkingConfig.include_thoughts` 设为 `true`
+> **注意：** 此模块只负责注入逻辑。模型验证、后缀解析、预算钳制由 `thinking/injector.rs` 完成。
+> 此模块接收已处理好的 `ThinkingConfig` 并注入到请求体中：
+> - 收到 `ThinkingConfig::Budget` → 注入 Gemini 2.5 格式（thinkingBudget + include_thoughts）
+> - 收到 `ThinkingConfig::Effort` → 注入 Gemini 3 格式（thinkingLevel + includeThoughts）
+>
+> injector 根据模型是否有 `levels` 决定传递哪种类型，本模块不需要再判断模型版本。
 
-#### Scenario: 带思考等级的 Gemini 3
-- **当** 模型为 Gemini 3 变体（如 `gemini-3-pro-preview`、`gemini-3-flash-preview`）
-- **且** 带有思考后缀
-- **则** The system SHALL将预算转换为等级字符串并设置 `generationConfig.thinkingConfig.thinkingLevel`
-- **且** 若未显式设置，将 `generationConfig.thinkingConfig.includeThoughts` 设为 `true`
-- **且** 若存在 `thinkingBudget` 字段则移除（Gemini 3 使用等级而非预算）
+#### Scenario: Gemini 2.5 注入（使用数值预算）
+- **当** 模型为 Gemini 2.5 变体
+- **且** 收到 `ThinkingConfig::Budget(budget)`
+- **则** The system SHALL 设置 `generationConfig.thinkingConfig.thinkingBudget` 为预算值
+- **且** 若用户未显式设置，将 `include_thoughts` 设为 `true`
 
-#### Scenario: Gemini 3 预算到等级转换
-- **当** 模型为 Gemini 3 且带有数值预算时
-- **则** The system SHALL使用以下规则转换：
-  - 对于 Gemini 3 Pro：仅支持 `"low"`、`"high"`
-    - budget <= 1024 → `"low"`
-    - budget > 1024 → `"high"`
-  - 对于 Gemini 3 Flash：支持 `"minimal"`、`"low"`、`"medium"`、`"high"`
-    - budget <= 512 → `"minimal"`
-    - budget <= 1024 → `"low"`
-    - budget <= 8192 → `"medium"`
-    - budget > 8192 → `"high"`
-  - budget == -1（auto）→ `"high"`
+#### Scenario: Gemini 3 注入（使用离散等级）
+- **当** 模型为 Gemini 3 变体
+- **且** 收到 `ThinkingConfig::Effort(level)`
+- **则** The system SHALL 设置 `generationConfig.thinkingConfig.thinkingLevel` 为等级字符串
+- **且** 若存在 `thinkingBudget` 字段则移除
+- **且** 若用户未显式设置，将 `includeThoughts` 设为 `true`（驼峰命名）
+- **且** 若存在旧版 `include_thoughts` 字段则移除
 
-#### Scenario: 带 auto 等级的 Gemini
-- **当** 模型为 Gemini 且带有后缀 `(auto)` 时
-- **则** 对于 Gemini 2.5：将 `thinkingBudget` 设为 `-1`
-- **且** 对于 Gemini 3：将 `thinkingLevel` 设为 `"high"`
-
-#### Scenario: 带默认思考的 Gemini 模型
-- **当** 模型默认启用思考（如 `gemini-3-pro-preview`）
-- **且** 未提供后缀
-- **则** The system SHALL不禁用思考
-- **且** 让模型使用其默认行为
-
-#### Scenario: 未知模型带思考后缀
-- **当** 模型带有思考后缀（如 `(high)`、`(16384)`）
-- **且** 模型不存在于注册表中
-- **则** The system SHALL返回 HTTP 400 错误，说明模型未知
-
-> **⚠️ 设计决策 - 与 CLIProxyAPI 不同：**
-> RS-Proxy 要求模型必须在注册表中才能应用思考配置。
-> 详见 thinking-mapping/spec.md 了解此设计决策的完整说明。
+#### Scenario: 覆盖用户已设置的值
+- **当** 用户请求中已包含 `thinkingBudget` 或 `thinkingLevel`
+- **且** 模型名称包含思考后缀
+- **则** The system SHALL 用后缀解析的值**覆盖**用户设置的值
 
 ### Requirement: 自动设置 include_thoughts
 
 The system SHALL在配置思考时自动设置 include_thoughts。
 
-#### Scenario: Gemini 2.5 自动设置 include_thoughts
-- **当** 设置思考预算且 budget != 0 时
-- **且** 用户未显式设置 `include_thoughts`
-- **则** The system SHALL将 `generationConfig.thinkingConfig.include_thoughts` 设为 `true`
+**文件：** `src/protocol/gemini.rs`
 
-#### Scenario: Gemini 3 自动设置 includeThoughts
-- **当** 设置思考等级时
-- **且** 用户未显式设置 `includeThoughts`
-- **则** The system SHALL将 `generationConfig.thinkingConfig.includeThoughts` 设为 `true`
-- **且** 若存在旧版 `include_thoughts` 字段则移除（Gemini 3 使用驼峰命名）
+#### Scenario: 自动设置
+- **当** 注入思考配置时
+- **且** 用户未显式设置 include_thoughts/includeThoughts
+- **则** The system SHALL 自动设为 `true`
 
 ### 实现说明
 
 ```rust
-fn is_gemini_3(model: &str) -> bool {
-    model.contains("gemini-3")
-}
+use crate::thinking::ThinkingConfig;
 
-fn is_gemini_3_flash(model: &str) -> bool {
-    model.contains("gemini-3") && model.contains("flash")
-}
+/// 注入 Gemini 思考配置
+///
+/// 此函数根据 ThinkingConfig 类型决定注入格式：
+/// - Budget → Gemini 2.5 格式（thinkingBudget + include_thoughts 蛇形命名）
+/// - Effort → Gemini 3 格式（thinkingLevel + includeThoughts 驼峰命名）
+///
+/// 注意：不需要在此判断模型版本，injector 已根据模型的 levels 字段
+/// 决定传递 Budget 还是 Effort 类型。
+pub fn inject_gemini(
+    mut body: serde_json::Value,
+    base_model: &str,
+    thinking_config: ThinkingConfig,
+) -> serde_json::Value {
+    // 更新模型名称（去除后缀）
+    body["model"] = serde_json::Value::String(base_model.to_string());
 
-fn budget_to_gemini3_level(model: &str, budget: i32) -> &'static str {
-    if budget == -1 {
-        return "high";  // auto -> high
+    // 确保 generationConfig.thinkingConfig 存在
+    if body.get("generationConfig").is_none() {
+        body["generationConfig"] = serde_json::json!({});
     }
-    if is_gemini_3_flash(model) {
-        match budget {
-            ..=512 => "minimal",
-            ..=1024 => "low",
-            ..=8192 => "medium",
-            _ => "high",
+    if body["generationConfig"].get("thinkingConfig").is_none() {
+        body["generationConfig"]["thinkingConfig"] = serde_json::json!({});
+    }
+
+    let thinking_config_obj = &mut body["generationConfig"]["thinkingConfig"];
+
+    match thinking_config {
+        ThinkingConfig::Budget(budget) => {
+            // Gemini 2.5 格式：使用数值预算
+            thinking_config_obj["thinkingBudget"] = serde_json::Value::Number(budget.into());
+
+            // 自动设置 include_thoughts（蛇形命名，Gemini 2.5 风格）
+            if thinking_config_obj.get("include_thoughts").is_none() {
+                thinking_config_obj["include_thoughts"] = serde_json::Value::Bool(true);
+            }
         }
-    } else {
-        // Gemini 3 Pro：仅 low/high
-        if budget <= 1024 { "low" } else { "high" }
-    }
-}
+        ThinkingConfig::Effort(level) => {
+            // Gemini 3 格式：使用离散等级
+            thinking_config_obj["thinkingLevel"] = serde_json::Value::String(level);
 
-// 对于 Gemini 2.5
-if !is_gemini_3(model) {
-    body["generationConfig"]["thinkingConfig"]["thinkingBudget"] = budget;
-    if !has_explicit_include_thoughts {
-        body["generationConfig"]["thinkingConfig"]["include_thoughts"] = true;
-    }
-}
+            // 移除 thinkingBudget（Gemini 3 不使用）
+            if let Some(obj) = thinking_config_obj.as_object_mut() {
+                obj.remove("thinkingBudget");
+            }
 
-// 对于 Gemini 3
-if is_gemini_3(model) {
-    let level = budget_to_gemini3_level(model, budget);
-    body["generationConfig"]["thinkingConfig"]["thinkingLevel"] = level;
-    // 若存在则移除 thinkingBudget
-    body["generationConfig"]["thinkingConfig"].remove("thinkingBudget");
-    if !has_explicit_include_thoughts {
-        body["generationConfig"]["thinkingConfig"]["includeThoughts"] = true;
+            // 自动设置 includeThoughts（驼峰命名，Gemini 3 风格）
+            if thinking_config_obj.get("includeThoughts").is_none() {
+                thinking_config_obj["includeThoughts"] = serde_json::Value::Bool(true);
+            }
+
+            // 清理旧版蛇形命名字段（Gemini 3 使用驼峰）
+            if let Some(obj) = thinking_config_obj.as_object_mut() {
+                obj.remove("include_thoughts");
+            }
+        }
     }
-    // 清理旧版蛇形命名字段
-    body["generationConfig"]["thinkingConfig"].remove("include_thoughts");
+
+    body
 }
 ```
 
 **关键点：**
 - Gemini 2.5 使用 `thinkingBudget`（数值）+ `include_thoughts`（蛇形命名）
 - Gemini 3 使用 `thinkingLevel`（字符串）+ `includeThoughts`（驼峰命名）
-- 设置思考配置时，自动将 include_thoughts/includeThoughts 设为 `true`，除非用户显式指定
-- `gemini-3-pro-preview` 等模型默认启用思考；仅在提供后缀时覆盖
+- injector 负责根据模型版本决定传递 `Budget` 还是 `Effort` 类型
