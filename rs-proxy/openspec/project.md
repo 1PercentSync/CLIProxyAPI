@@ -81,17 +81,17 @@ Thinking/reasoning is a feature in modern LLMs that allows extended "thinking" b
 - **Claude API:** Sets `thinking.type=enabled` and `thinking.budget_tokens`, sets `max_tokens` to model's `MaxCompletionTokens`
 - **OpenAI/Codex/Qwen/iFlow/OpenRouter:** Level/auto/none overrides `reasoning_effort` (chat) or `reasoning.effort` (Responses); numeric budgets are converted to level strings
 - Models using discrete levels validate the level; unsupported values return 400
-- `(none)` level results in NO thinking configuration being set (not `budget_tokens=0`)
+- `(none)` level results in NO thinking configuration being set (not `budget_tokens=0`) for claude models
 
 ### Effort Level Mapping
 
 | Level    | Budget (tokens) | Description |
 |----------|-----------------|-------------|
 | none     | 0 (clamped to min if 0 not allowed) | Disable thinking |
-| auto     | -1 (dynamic, or clamped if not supported) | Auto-assign by upstream |
+| auto     | -1 (dynamic, or mid point if not supported) | Auto-assign by upstream |
 | minimal  | 512             | Low-cost reasoning |
 | low      | 1024            | Fast reasoning |
-| medium   | 8192            | Default reasoning depth |
+| medium   | 8192            | Medium reasoning depth |
 | high     | 24576           | Deep reasoning |
 | xhigh    | 32768           | Deeper reasoning |
 
@@ -100,12 +100,11 @@ Thinking/reasoning is a feature in modern LLMs that allows extended "thinking" b
 Users append `(value)` to model names where value can be:
 - Numeric budget: `claude-sonnet-4(16384)` → 16384 tokens (provider-native tokens, clamped to model's supported range)
 - Effort level: `gpt-5.1(high)` → high effort (case-insensitive)
-- Empty parentheses `()` are ignored
-- For `provider://model` format, append brackets after model name: `openrouter://gemini-3-pro-preview(high)`
+- Empty parentheses `()` are removed and ignored
 
 ## Important Constraints
 
-- **Compatibility:** Must match CLIProxyAPI's `NormalizeThinkingModel()` parsing logic exactly
+- **Compatibility:** Must match CLIProxyAPI's Thinking parsing logic exactly
 - **Performance:** SSE streaming must not buffer; forward chunks immediately
 - **Transparency:** All headers (especially auth) must be forwarded unchanged
 - **Build dependency:** Requires network access at compile time to fetch CLIProxyAPI sources
@@ -119,7 +118,19 @@ Users append `(value)` to model names where value can be:
 
 ### Source Files Parsed at Build Time
 
-- `internal/util/thinking.go` - Effort level mappings
-- `internal/util/gemini_thinking.go` - Gemini model detection
-- `internal/util/claude_thinking.go` - Claude model support
-- `internal/util/provider.go` - Model-to-provider mapping
+- `internal/registry/model_definitions.go` - All static model definitions with `ThinkingSupport` configuration
+- `internal/util/gemini_thinking.go` - Gemini 3 model detection regexes and level mappings
+
+## Design Decisions (Differs from CLIProxyAPI)
+
+### Unknown Models with Thinking Suffix
+
+**CLIProxyAPI behavior:** Allows thinking suffixes on unknown models
+
+**RS-Proxy behavior:** Returns HTTP 400 error for unknown models with thinking suffix
+
+**Rationale:**
+- Ensures predictable behavior - no silent failures with incorrect configurations
+- Prevents sending requests with wrong `max_tokens` values that may cause upstream errors
+- Forces users to use known, supported models for thinking features
+- Simplifies implementation by not needing fallback logic
