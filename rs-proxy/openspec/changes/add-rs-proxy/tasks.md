@@ -31,7 +31,7 @@
 
 - [ ] 3.1 定义 Rust 数据结构（models/registry.rs）
   - `ThinkingSupport` 结构体（min, max, zero_allowed, dynamic_allowed, levels）
-  - `ModelInfo` 结构体（id, max_completion_tokens, thinking, model_type）
+  - `ModelInfo` 结构体（id, max_completion_tokens, thinking）
 - [ ] 3.2 对照 CLIProxyAPI 的 `internal/registry/model_definitions.go` 编写模型定义
   - Claude 模型（claude-sonnet-4-5, claude-opus-4-5, 等）
   - Gemini 模型（gemini-2.5-pro, gemini-3-pro-preview, 等）

@@ -44,20 +44,18 @@ pub struct ModelInfo {
     pub max_completion_tokens: i32,
     /// 思考支持配置，None 表示不支持思考
     pub thinking: Option<ThinkingSupport>,
-    /// 模型类型（"claude", "gemini", "openai", "iflow"）
-    pub model_type: &'static str,
 }
 ```
 
 ### 模型定义示例
 
-对照 CLIProxyAPI 的 `internal/registry/model_definitions.go`：
+对照 CLIProxyAPI 的 `internal/registry/model_definitions.go`，以下仅为结构示例，实现时应完整复制所有模型定义：
 
 ```rust
 use std::sync::LazyLock;
 
 static MODELS: LazyLock<Vec<ModelInfo>> = LazyLock::new(|| vec![
-    // Claude 模型
+    // 示例 1：使用数值预算的模型
     ModelInfo {
         id: "claude-sonnet-4-5-20250929",
         max_completion_tokens: 64000,
@@ -68,30 +66,9 @@ static MODELS: LazyLock<Vec<ModelInfo>> = LazyLock::new(|| vec![
             dynamic_allowed: true,
             levels: None,
         }),
-        model_type: "claude",
-    },
-    ModelInfo {
-        id: "claude-haiku-4-5-20251001",
-        max_completion_tokens: 64000,
-        thinking: None, // Haiku 不支持思考
-        model_type: "claude",
     },
 
-    // Gemini 2.5 模型
-    ModelInfo {
-        id: "gemini-2.5-pro",
-        max_completion_tokens: 65536,
-        thinking: Some(ThinkingSupport {
-            min: 128,
-            max: 32768,
-            zero_allowed: false,
-            dynamic_allowed: true,
-            levels: None,
-        }),
-        model_type: "gemini",
-    },
-
-    // Gemini 3 模型（使用离散等级）
+    // 示例 2：使用离散等级的模型
     ModelInfo {
         id: "gemini-3-pro-preview",
         max_completion_tokens: 65536,
@@ -102,49 +79,9 @@ static MODELS: LazyLock<Vec<ModelInfo>> = LazyLock::new(|| vec![
             dynamic_allowed: true,
             levels: Some(&["low", "high"]),
         }),
-        model_type: "gemini",
-    },
-    ModelInfo {
-        id: "gemini-3-flash-preview",
-        max_completion_tokens: 65536,
-        thinking: Some(ThinkingSupport {
-            min: 128,
-            max: 32768,
-            zero_allowed: false,
-            dynamic_allowed: true,
-            levels: Some(&["minimal", "low", "medium", "high"]),
-        }),
-        model_type: "gemini",
     },
 
-    // OpenAI 模型（使用离散等级）
-    ModelInfo {
-        id: "gpt-5.1",
-        max_completion_tokens: 128000,
-        thinking: Some(ThinkingSupport {
-            min: 0,
-            max: 0,
-            zero_allowed: false,
-            dynamic_allowed: false,
-            levels: Some(&["none", "low", "medium", "high"]),
-        }),
-        model_type: "openai",
-    },
-
-    // iFlow 模型
-    ModelInfo {
-        id: "glm-4.7",
-        max_completion_tokens: 0,
-        thinking: Some(ThinkingSupport {
-            min: 0,
-            max: 0,
-            zero_allowed: false,
-            dynamic_allowed: false,
-            levels: Some(&["none", "auto", "minimal", "low", "medium", "high", "xhigh"]),
-        }),
-        model_type: "iflow",
-    },
-    // ... 更多模型
+    // 实现时需包含 CLIProxyAPI 中的所有模型...
 ]);
 
 pub fn get_model_info(id: &str) -> Option<&'static ModelInfo> {
