@@ -2,67 +2,67 @@
 
 ### Requirement: OpenAI 协议思考注入
 
-The system SHALL为 OpenAI 协议注入思考配置，与 CLIProxyAPI 保持一致。
+The system SHALL为 OpenAI 协议注入思考配置。
 
 **文件：** `src/protocol/openai.rs`
 
-#### Scenario: 带等级后缀的聊天补全
-- **当** 模型带有后缀 `(high)` 且协议为 OpenAI chat（`/v1/chat/completions`）时
-- **且** 模型存在于注册表中并支持思考
-- **则** The system SHALL将 `reasoning_effort` 设为 `high`
+> **注意：** 此模块只负责注入逻辑。模型验证、后缀解析、预算/等级转换和钳制由 `thinking/injector.rs` 完成。
+> 此模块接收已处理好的 `ThinkingConfig::Effort(String)` 并注入到请求体中。
+
+#### Scenario: 聊天补全端点注入
+- **当** 协议为 OpenAI chat（`/v1/chat/completions`）
+- **且** 收到 `ThinkingConfig::Effort` 配置
+- **则** The system SHALL 设置 `reasoning_effort` 字段
 - **且** 将 `model` 字段设为基础模型名称
 
-#### Scenario: 带等级后缀的 Responses 端点
-- **当** 模型带有后缀 `(high)` 且协议为 OpenAI Responses（`/v1/responses`）时
-- **且** 模型存在于注册表中并支持思考
-- **则** The system SHALL将 `reasoning.effort` 设为 `high`
+#### Scenario: Responses 端点注入
+- **当** 协议为 OpenAI Responses（`/v1/responses`）
+- **且** 收到 `ThinkingConfig::Effort` 配置
+- **则** The system SHALL 设置 `reasoning.effort` 字段
 - **且** 将 `model` 字段设为基础模型名称
 
-#### Scenario: OpenAI 数值预算
-- **当** 模型带有数值后缀 `(16384)` 且协议为 OpenAI 时
-- **且** 模型存在于注册表中并支持思考
-- **则** The system SHALL使用反向映射将数值预算转换为等级字符串：
-  - 1 - 1024 → `"low"`
-  - 1025 - 8192 → `"medium"`
-  - 8193 - 24576 → `"high"`
-  - 24577+ → 最高支持等级（默认 `"xhigh"`）
-- **且** 设置 `reasoning_effort`（chat）或 `reasoning.effort`（responses）为转换后的等级
-- **且** 将 `model` 字段设为基础模型名称
-
-#### Scenario: 未知模型带思考后缀
-- **当** 模型带有思考后缀（如 `(high)`、`(16384)`）
-- **且** 模型不存在于注册表中
-- **则** The system SHALL返回 HTTP 400 错误，说明模型未知
-
-> **⚠️ 设计决策 - 与 CLIProxyAPI 不同：**
-> RS-Proxy 要求模型必须在注册表中才能应用思考配置。
-> 详见 thinking-mapping/spec.md 了解此设计决策的完整说明。
+#### Scenario: 覆盖用户已设置的值
+- **当** 用户请求中已包含 `reasoning_effort` 或 `reasoning.effort`
+- **且** 模型名称包含思考后缀
+- **则** The system SHALL 用后缀解析的值**覆盖**用户设置的值
 
 ### 实现说明
 
-**关键点：** OpenAI 协议的 `reasoning_effort` 仅接受等级字符串，不接受数值预算。数值预算必须先转换为等级。
-
 ```rust
-// 预算到等级转换（反向映射）
-fn budget_to_effort(budget: i32) -> &'static str {
-    match budget {
-        1..=1024 => "low",
-        1025..=8192 => "medium",
-        8193..=24576 => "high",
-        _ if budget > 24576 => "xhigh",
-        _ => "medium", // 回退
+use crate::thinking::ThinkingConfig;
+
+/// 注入 OpenAI 思考配置
+/// 前置条件：thinking_config 已由 injector 处理为 Effort 类型
+pub fn inject_openai(
+    mut body: serde_json::Value,
+    base_model: &str,
+    thinking_config: ThinkingConfig,
+    is_responses_endpoint: bool,
+) -> serde_json::Value {
+    // 更新模型名称（去除后缀）
+    body["model"] = serde_json::Value::String(base_model.to_string());
+
+    // 提取等级字符串
+    let effort = match thinking_config {
+        ThinkingConfig::Effort(e) => e,
+        ThinkingConfig::Budget(_) => {
+            // OpenAI 协议不应收到 Budget 类型，injector 应已转换
+            unreachable!("OpenAI protocol should receive Effort, not Budget")
+        }
+    };
+
+    // 根据端点类型注入
+    if is_responses_endpoint {
+        // /v1/responses 使用嵌套结构
+        if body.get("reasoning").is_none() {
+            body["reasoning"] = serde_json::json!({});
+        }
+        body["reasoning"]["effort"] = serde_json::Value::String(effort);
+    } else {
+        // /v1/chat/completions 使用顶级字段
+        body["reasoning_effort"] = serde_json::Value::String(effort);
     }
+
+    body
 }
-
-// 对于 /v1/chat/completions
-body["model"] = base_model;
-let level = match thinking {
-    ThinkingValue::Level(l) => l,
-    ThinkingValue::Budget(b) => budget_to_effort(b),
-};
-body["reasoning_effort"] = level;
-
-// 对于 /v1/responses
-body["model"] = base_model;
-body["reasoning"]["effort"] = level;
 ```
