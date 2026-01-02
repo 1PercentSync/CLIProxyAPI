@@ -84,14 +84,3 @@
 - [ ] 8.2 优雅处理错误情况
 - [ ] 8.3 使用真实 API 调用进行测试
 
----
-
-## 待跟进：CLIProxyAPI 问题
-
-> 以下问题需要在 CLIProxyAPI 中确认或修复，RS-Proxy 已采用不同的处理方式。
-
-- [ ] **数值预算转等级后未验证等级有效性**
-  - **位置：** `internal/util/thinking.go` 的 `ThinkingBudgetToEffort` 函数
-  - **问题：** 数值预算（如 `8000`）转换为等级（如 `medium`）后，未检查该等级是否在模型支持列表中。若模型只支持 `["low", "high"]`，则 `medium` 无效，最终由 `ValidateThinkingConfig` 返回 400。
-  - **RS-Proxy 处理：** 向上 clamp 到最近的支持等级（如 `medium` → `high`）
-  - **建议：** CLIProxyAPI 可考虑采用相同的 clamp 逻辑，或明确返回更具体的错误信息
