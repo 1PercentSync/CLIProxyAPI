@@ -64,11 +64,16 @@
   - Gemini 2.5: 设置 `thinkingBudget`
   - Gemini 3: 设置 `thinkingLevel`
 
-## 6. 模型列表增强
+## 6. 协议检测与模型列表增强
 
-- [ ] 6.1 实现基于请求头的协议检测（protocol/mod.rs，仅用于 /v1/models）
-  - `x-api-key` → Anthropic
-  - `Authorization: Bearer` → OpenAI
+- [ ] 6.1 实现协议检测（protocol/mod.rs）
+  - 基于路径检测：
+    - `/v1/chat/completions`、`/v1/responses` → OpenAI
+    - `/v1/messages` → Anthropic
+    - `/v1beta/models/*` → Gemini
+  - 基于请求头检测（仅 `/v1/models` 端点）：
+    - `x-api-key` → Anthropic
+    - `Authorization: Bearer`（无 `x-api-key`）→ OpenAI
 - [ ] 6.2 实现模型列表增强器（models/enhancer.rs）
   - 为支持的模型添加思考等级变体
 
