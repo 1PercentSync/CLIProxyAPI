@@ -24,14 +24,22 @@ The system SHALL使用 argh 接受命令行配置参数。
 ```rust
 use argh::FromArgs;
 
+fn default_port() -> u16 {
+    6356
+}
+
+fn default_base_url() -> String {
+    String::from("cpa.1percentsync.games")
+}
+
 #[derive(FromArgs)]
 /// RS-Proxy：思考配置注入代理
 struct Args {
-    #[argh(option, short = 'p', default = "6356")]
+    #[argh(option, short = 'p', default = "default_port()")]
     /// 监听端口
     port: u16,
 
-    #[argh(option, short = 'b', default = "String::from(\"cpa.1percentsync.games\")")]
+    #[argh(option, short = 'b', default = "default_base_url()")]
     /// 上游基础 URL
     base_url: String,
 }
