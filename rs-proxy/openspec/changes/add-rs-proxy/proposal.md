@@ -38,6 +38,7 @@
   - `cli` → `src/config.rs`
   - `thinking-parser` → `src/thinking/parser.rs`
   - `thinking-mapping` → `src/thinking/models.rs`
+  - `thinking-injector` → `src/thinking/injector.rs`
   - `model-registry` → `src/models/registry.rs`
   - `protocol-detection` → `src/protocol/mod.rs`
   - `protocol-openai` → `src/protocol/openai.rs`
