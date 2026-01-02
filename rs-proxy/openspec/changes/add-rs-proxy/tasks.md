@@ -22,11 +22,10 @@
 - [ ] 2.2 使用 thiserror 定义自定义错误类型（error.rs）
   - 包装 reqwest::Error、serde_json::Error、std::io::Error
   - 使用 `#[from]` 实现自动转换
-- [ ] 2.3 实现 HTTP 客户端封装（proxy/client.rs）
-  - 连接池
+- [ ] 2.3 实现代理核心（proxy/client.rs）
+  - HTTP 客户端封装与连接池
   - 头部转发
-- [ ] 2.4 实现 SSE 流处理（proxy/streaming.rs）
-  - 将上游字节转发到下游
+  - SSE 流处理（将上游字节转发到下游）
 
 ## 3. 模型注册表
 

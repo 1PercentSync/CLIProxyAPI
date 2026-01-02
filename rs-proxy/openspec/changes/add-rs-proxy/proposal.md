@@ -43,8 +43,7 @@
   - `protocol-openai` → `src/protocol/openai.rs`
   - `protocol-anthropic` → `src/protocol/anthropic.rs`
   - `protocol-gemini` → `src/protocol/gemini.rs`
-  - `proxy-streaming` → `src/proxy/streaming.rs`
-  - `proxy-headers` → `src/proxy/client.rs`
+  - `proxy-core` → `src/proxy/client.rs`（头部转发 + SSE 流处理）
   - `models-enhancer` → `src/models/enhancer.rs`
 - 受影响的代码：`/rs-proxy` 目录下的新项目
 - 依赖：tokio, axum, reqwest, argh, serde_json, tower-http, futures, thiserror
