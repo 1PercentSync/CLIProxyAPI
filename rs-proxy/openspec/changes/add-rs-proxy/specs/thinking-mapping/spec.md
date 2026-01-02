@@ -9,7 +9,25 @@ The system SHALL将努力等级字符串映射到 token 预算，与 CLIProxyAPI
 #### Scenario: 标准努力等级
 - **当** 努力等级为以下之一：none, auto, minimal, low, medium, high, xhigh
 - **则** The system SHALL分别映射到预算：0, -1, 512, 1024, 8192, 24576, 32768
-- **且** 应用钳制规则（none→0 若不允许 0 则钳制到最小值；auto→-1 或不支持时钳制）
+- **且** 应用钳制规则：
+  - `none` → 0（若模型不允许 0 则钳制到 min）
+  - `auto` → -1（若模型不支持动态则钳制到中点，见下方说明）
+  - 其他等级 → 对应预算值，钳制到 [min, max] 范围
+
+> **注意：** 未知模型的处理由 `thinking/injector.rs` 负责（返回 HTTP 400），
+> 此模块仅处理已知模型的映射和钳制逻辑。
+
+#### Scenario: auto 等级钳制（模型不支持动态预算）
+- **当** 努力等级为 `auto`
+- **且** 模型的 `DynamicAllowed == false`
+- **则** The system SHALL 返回中点值 `(min + max) / 2`
+
+> **⚠️ 设计决策 - 与 CLIProxyAPI 不同：**
+> CLIProxyAPI 在 `mid <= 0` 时有额外的回退逻辑（返回 0 或 min）。
+> RS-Proxy 省略此分支，因为：
+> 1. 当前所有模型定义中 `min + max > 0`，`mid` 永远不会 <= 0
+> 2. RS-Proxy 要求模型必须在注册表中，可保证模型定义的合理性
+> 3. 简化实现，避免不可达代码
 
 ### Requirement: 预算到努力等级反向映射
 
@@ -20,12 +38,29 @@ The system SHALL将数值预算映射回努力等级字符串（OpenAI 协议需
 #### Scenario: 预算到努力等级转换
 - **当** 需要将数值预算转换为努力等级时（如 OpenAI）
 - **则** The system SHALL使用以下范围：
-  - 0 → `"none"`（或若不允许 0 则使用模型支持的最低等级）
+  - 0 → 若模型有离散等级则返回 `levels[0]`（最低等级）；否则返回 `"none"`
   - -1 → `"auto"`
   - 1 - 1024 → `"low"`
   - 1025 - 8192 → `"medium"`
   - 8193 - 24576 → `"high"`
-  - 24577+ → 模型支持的最高等级（默认 `"xhigh"`）
+  - 24577+ → 若模型有离散等级则返回 `levels[last]`（最高等级）；否则返回 `"xhigh"`
+
+### Requirement: Gemini thinkingLevel 专用映射
+
+The system SHALL 为 Gemini 协议提供专用的 thinkingLevel 到预算映射。
+
+**文件：** `src/thinking/models.rs`
+
+#### Scenario: Gemini thinkingLevel 转换
+- **当** 需要将 Gemini 的 thinkingLevel 转换为预算时
+- **则** The system SHALL使用以下映射（注意 high 的值与通用映射不同）：
+  - `"minimal"` → 512
+  - `"low"` → 1024
+  - `"medium"` → 8192
+  - `"high"` → **32768**（不是 24576）
+
+> **⚠️ 注意：** Gemini 的 `high` 等级映射到 32768，与通用的 24576 不同。
+> 这是因为 Gemini 3 模型的 thinkingLevel 使用不同的预算范围。
 
 ### Requirement: 支持思考的模型的思考注入
 
@@ -63,7 +98,7 @@ The system SHALL验证使用离散等级的模型的努力等级。
 ### 实现说明
 
 ```rust
-/// 等级到预算（正向映射）
+/// 等级到预算（正向映射 - 通用）
 pub fn level_to_budget(level: &str) -> Option<i32> {
     match level.to_lowercase().as_str() {
         "none" => Some(0),
@@ -77,28 +112,51 @@ pub fn level_to_budget(level: &str) -> Option<i32> {
     }
 }
 
+/// Gemini thinkingLevel 到预算（Gemini 专用）
+/// 注意：high 映射到 32768，与通用映射不同
+pub fn gemini_level_to_budget(level: &str) -> Option<i32> {
+    match level.to_lowercase().as_str() {
+        "minimal" => Some(512),
+        "low" => Some(1024),
+        "medium" => Some(8192),
+        "high" => Some(32768),  // 注意：与通用的 24576 不同
+        _ => None,
+    }
+}
+
 /// 预算到努力等级（反向映射，OpenAI 协议需要）
-pub fn budget_to_effort(budget: i32) -> &'static str {
+pub fn budget_to_effort(budget: i32, model_levels: Option<&[String]>) -> &'static str {
     match budget {
-        0 => "none",
+        0 => {
+            // 若模型有离散等级，返回最低等级；否则返回 "none"
+            if let Some(levels) = model_levels {
+                if !levels.is_empty() {
+                    return levels[0].as_str();
+                }
+            }
+            "none"
+        }
         -1 => "auto",
         1..=1024 => "low",
         1025..=8192 => "medium",
         8193..=24576 => "high",
-        _ if budget > 24576 => "xhigh",
+        _ if budget > 24576 => {
+            // 若模型有离散等级，返回最高等级；否则返回 "xhigh"
+            if let Some(levels) = model_levels {
+                if !levels.is_empty() {
+                    return levels[levels.len() - 1].as_str();
+                }
+            }
+            "xhigh"
+        }
         _ => "medium",  // 意外值的回退
     }
 }
 
-/// 带模型感知的预算到努力等级（使用模型支持的最高等级）
+/// 带模型感知的预算到努力等级
 pub fn budget_to_effort_for_model(model: &str, budget: i32) -> String {
-    if budget > 24576 {
-        // 返回模型支持的最高等级，或默认 "xhigh"
-        if let Some(levels) = get_model_thinking_levels(model) {
-            return levels.last().unwrap_or(&"xhigh").to_string();
-        }
-    }
-    budget_to_effort(budget).to_string()
+    let levels = get_model_thinking_levels(model);
+    budget_to_effort(budget, levels.as_deref()).to_string()
 }
 ```
 
