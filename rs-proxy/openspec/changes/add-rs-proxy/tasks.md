@@ -1,20 +1,21 @@
 ## 1. Project Setup
 
-- [ ] 1.1 Create `Cargo.toml` with dependencies:
-  - tokio 1.48.0 (rt-multi-thread, macros, net, io-util, sync)
-  - axum 0.8.8
-  - reqwest 0.13.1 (json, stream)
-  - argh 0.1.13
-  - serde 1.0.228 (derive)
-  - serde_json 1.0.148
-  - tower-http 0.6.8 (cors, trace)
-  - futures 0.3.31
-  - tokio-stream 0.1.17
-  - regex 1.12.2
+- [ ] 1.1 Create `Cargo.toml` with dependencies (use latest compatible versions):
+  - tokio (rt-multi-thread, macros, net, io-util, sync)
+  - axum
+  - reqwest (json, stream)
+  - argh
+  - serde (derive)
+  - serde_json
+  - tower-http (cors, trace)
+  - futures
+  - tokio-stream
+  - regex
   - tracing, tracing-subscriber
-  - thiserror 2.0.17
+  - thiserror
 - [ ] 1.2 Create `Cargo.toml` [build-dependencies]:
-  - reqwest 0.13.1 (blocking)
+  - reqwest (blocking)
+  - regex
 - [ ] 1.3 Create `build.rs` for compile-time data fetching from CLIProxyAPI
 
 ## 2. Core Infrastructure

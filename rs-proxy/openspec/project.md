@@ -12,21 +12,22 @@ RS-Proxy is a standalone lightweight Rust reverse proxy that can be used indepen
 
 ## Tech Stack
 
-- **Language:** Rust 1.92.0
-- **Runtime:** Tokio 1.48.0 (async runtime)
-- **HTTP Server:** Axum 0.8.8
-- **HTTP Client:** Reqwest 0.13.1
-- **CLI:** Argh 0.1.13
-- **JSON:** Serde 1.0.228 + Serde_json 1.0.148
-- **Middleware:** Tower-http 0.6.8
-- **Streams:** Futures 0.3.31 + Tokio-stream 0.1.17
-- **Regex:** Regex 1.12.2
-- **Errors:** Thiserror 2.0.17
+- **Language:** Rust (latest stable)
+- **Runtime:** Tokio (async runtime)
+- **HTTP Server:** Axum
+- **HTTP Client:** Reqwest
+- **CLI:** Argh
+- **JSON:** Serde + Serde_json
+- **Middleware:** Tower-http
+- **Streams:** Futures + Tokio-stream
+- **Regex:** Regex
+- **Errors:** Thiserror
 - **Logging:** Tracing + Tracing-subscriber
 
 ### Build Dependencies
 
 - **Reqwest** with `blocking` feature for synchronous HTTP in `build.rs`
+- **Regex** for parsing Go source files
 
 ### Notes on Dependency Choices
 

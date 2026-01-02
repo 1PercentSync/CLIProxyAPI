@@ -95,11 +95,11 @@ fn parse_model_definitions(go_source: &str) -> Vec<ModelInfo> {
 }
 ```
 
-**Cargo.toml:**
+**Cargo.toml (use latest compatible versions):**
 ```toml
 [build-dependencies]
-reqwest = { version = "0.13.1", features = ["blocking"] }
-regex = "1.12.2"
+reqwest = { version = "*", features = ["blocking"] }
+regex = "*"
 ```
 
 **Generated Rust structures:**
