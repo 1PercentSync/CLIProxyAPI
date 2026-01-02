@@ -48,20 +48,10 @@ RS-Proxy is a standalone lightweight Rust reverse proxy that transparently forwa
 - **Approach:** Use reqwest's `bytes_stream()` and forward chunks directly
 
 ### Decision 5: Thinking injection rules (aligned with CLIProxyAPI)
-Protocol-specific injection behavior matching CLIProxyAPI's implementation:
-
-| Protocol | Level/auto/none | Numeric budget |
-|----------|-----------------|----------------|
-| OpenAI (chat) | Override `reasoning_effort` | No modification |
-| OpenAI (Responses) | Override `reasoning.effort` | No modification |
-| Anthropic | Set `thinking.type=enabled` + `thinking.budget_tokens` | Set `thinking.type=enabled` + `thinking.budget_tokens` |
-| Gemini | Set `generationConfig.thinkingConfig.thinkingBudget` | Set `generationConfig.thinkingConfig.thinkingBudget` |
+Protocol-specific injection behavior matching CLIProxyAPI's implementation
 
 **Important notes:**
-- Only models declaring thinking support get injection; unsupported models just have brackets stripped
 - Budget values are clamped to model's supported range
-- Gemini: does NOT modify `include_thoughts`
-- Claude: may increase `max_tokens` if necessary
 - Models using discrete levels validate the level; unsupported values return 400
 
 ### Decision 6: Model list enhancement (differs from CLIProxyAPI)
@@ -73,15 +63,9 @@ Protocol-specific injection behavior matching CLIProxyAPI's implementation:
 
 | Risk | Mitigation |
 |------|------------|
-| CLIProxyAPI source format changes | build.rs parsing is regex-based, may need updates |
 | Large streaming responses | No buffering, direct passthrough minimizes memory |
-| Protocol detection ambiguity | Clear header-based rules, fallback to OpenAI format |
+| Protocol detection ambiguity | Clear header-based rules |
 
 ## Migration Plan
 
 N/A - New project, no migration required.
-
-## Open Questions
-
-1. Should we support custom thinking level names beyond the standard set?
-2. Should model list caching be added for performance?
