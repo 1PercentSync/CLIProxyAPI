@@ -23,13 +23,23 @@ The system SHALL从模型名称后缀解析思考配置，与 CLIProxyAPI 的 `N
 
 #### Scenario: 空括号
 - **当** 请求包含模型名称 `model-name()` 时
-- **则** The system SHALL忽略空括号
-- **且** 使用 `model-name` 作为模型名称（去除括号）
+- **则** The system SHALL 去除空括号
+- **且** 使用 `model-name` 作为模型名称
+- **且** 不注入任何思考配置
 
-#### Scenario: 提供商前缀格式
-- **当** 请求包含模型名称 `openrouter://gemini-3-pro-preview(high)` 时
-- **则** The system SHALL提取基础模型 `openrouter://gemini-3-pro-preview`
-- **且** 提取推理努力等级 `high`
+> **⚠️ 设计决策 - 与 CLIProxyAPI 不同：**
+> CLIProxyAPI 对空括号返回原始模型名（含括号）。
+> RS-Proxy 去除空括号，提供更干净的模型名称。
+
+#### Scenario: 不完整括号
+- **当** 请求包含模型名称带有不完整括号（如 `model(high` 或 `model)high`）时
+- **则** The system SHALL 原样透传整个模型名称
+- **且** 不做任何处理
+
+#### Scenario: 负数预算
+- **当** 请求包含模型名称 `model(-1)` 时
+- **则** The system SHALL 提取基础模型 `model`
+- **且** 提取思考预算 `-1`（表示动态/自动思考预算）
 
 ### 实现说明
 
