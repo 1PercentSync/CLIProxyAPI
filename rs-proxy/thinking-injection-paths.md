@@ -13,7 +13,10 @@
 > **协议差异处理**：
 > - **Anthropic 协议**：返回 `ThinkingConfig::Disabled` → 注入 `thinking: { type: "disabled" }`
 > - **OpenAI 协议**：返回 `ThinkingConfig::Disabled` → 注入 `reasoning_effort: "none"`
-> - **Gemini 协议**：返回 `ThinkingConfig::Budget(0)` → 注入 `thinkingBudget: 0`
+> - **Gemini 协议**：取决于模型类型：
+>   - Gemini 3 模型（有 levels）：返回 `Budget(0)` → 注入 `thinkingBudget: 0`
+>   - Gemini 2.5 模型（无 levels，原生 Gemini 模型）：clamp 到 `min`（如 128）
+>   - 跨协议调用（如 Claude + Gemini 协议）：返回 `Budget(0)` → 注入 `thinkingBudget: 0`
 >
 > **2. 动态思考处理 `(auto)` / `(-1)`**
 >
@@ -23,7 +26,7 @@
 > - **Gemini 协议**：返回 `ThinkingConfig::Budget(-1)` → 注入 `thinkingBudget: -1`
 >   - 无论模型是否有 levels，`(auto)` 都直接透传为 -1
 > - **OpenAI 协议**：转换为 `"medium"`（OpenAI 不支持 auto）
-> - **Anthropic 协议**：使用 `auto_budget` 或 `(min+max)/2`（Anthropic 不支持 -1）
+> - **Anthropic 协议**：使用 `auto_budget` 或 `level_to_budget("medium")` (8192)（Anthropic 不支持 -1）
 >
 > **3. 数值后缀处理**
 >
@@ -263,19 +266,19 @@
 
 > **注意**：
 > - 模型无预算范围（max=0），不做 clamp
-> - Anthropic 协议不支持 `budget_tokens: -1`，使用 `auto_budget` 或默认 8192
+> - Anthropic 协议不支持 `budget_tokens: -1`，使用 `auto_budget` 或默认 `level_to_budget("medium")` (8192)
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
 | `(none)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(auto)` | `level_to_budget("auto")` → -1 → Anthropic 不支持 → 8192 | `budget_tokens: 8192` |
+| `(auto)` | `level_to_budget("auto")` → -1 → Anthropic 不支持 → `auto_budget` 或 `level_to_budget("medium")` | `budget_tokens: 8192` |
 | `(minimal)` | `level_to_budget("minimal")` → 512 | `budget_tokens: 512` |
 | `(low)` | `level_to_budget("low")` → 1024 | `budget_tokens: 1024` |
 | `(medium)` | `level_to_budget("medium")` → 8192 | `budget_tokens: 8192` |
 | `(high)` | `level_to_budget("high")` → 24576 | `budget_tokens: 24576` |
 | `(xhigh)` | `level_to_budget("xhigh")` → 32768 | `budget_tokens: 32768` |
 | `(0)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(-1)` | Anthropic 不支持 → 8192 | `budget_tokens: 8192` |
+| `(-1)` | Anthropic 不支持 → `auto_budget` 或 `level_to_budget("medium")` | `budget_tokens: 8192` |
 | `(8192)` | 直接使用（无 range 不 clamp） | `budget_tokens: 8192` |
 | `(50000)` | 直接使用（无 range 不 clamp） | `budget_tokens: 50000` |
 
