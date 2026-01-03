@@ -1,6 +1,6 @@
 ## 1. 项目设置
 
-- [ ] 1.1 创建 `Cargo.toml` 并添加依赖（使用最新兼容版本）：
+- [x] 1.1 创建 `Cargo.toml` 并添加依赖（使用最新兼容版本）：
   - tokio (rt-multi-thread, macros, net, io-util, sync)
   - axum
   - reqwest (json, stream)
@@ -16,29 +16,29 @@
 
 ## 2. 核心基础设施
 
-- [ ] 2.1 使用 argh 实现 CLI 参数解析（main.rs、config.rs）
+- [x] 2.1 使用 argh 实现 CLI 参数解析（main.rs、config.rs）
   - 使用 `#[argh(option, default = "...")]` 设置默认值
   - `-b/--base-url`（默认：`"cpa.1percentsync.games"`）
   - `-p/--port`（默认：6356）
-- [ ] 2.2 使用 thiserror 定义自定义错误类型（error.rs）
+- [x] 2.2 使用 thiserror 定义自定义错误类型（error.rs）
   - 包装 reqwest::Error、serde_json::Error、std::io::Error
   - 使用 `#[from]` 实现自动转换
-- [ ] 2.3 实现代理核心（proxy/client.rs）
+- [x] 2.3 实现代理核心（proxy/client.rs）
   - HTTP 客户端封装与连接池
   - 头部转发
   - SSE 流处理（将上游字节转发到下游）
 
 ## 3. 模型注册表
 
-- [ ] 3.1 定义 Rust 数据结构（models/registry.rs）
+- [x] 3.1 定义 Rust 数据结构（models/registry.rs）
   - `ThinkingSupport` 结构体（min, max, zero_allowed, dynamic_allowed, levels）
   - `ModelInfo` 结构体（id, max_completion_tokens, thinking）
-- [ ] 3.2 对照 CLIProxyAPI 的 `internal/registry/model_definitions.go` 编写模型定义
+- [x] 3.2 对照 CLIProxyAPI 的 `internal/registry/model_definitions.go` 编写模型定义
   - Claude 模型（claude-sonnet-4-5, claude-opus-4-5, 等）
   - Gemini 模型（gemini-2.5-pro, gemini-3-pro-preview, 等）
   - OpenAI 模型（gpt-5, gpt-5.1, gpt-5.2, 等）
   - iFlow 模型（glm-4.6, glm-4.7, minimax-m2.1）
-- [ ] 3.3 实现模型查找函数
+- [x] 3.3 实现模型查找函数
   - `get_model_info(id: &str) -> Option<&ModelInfo>`
   - `model_supports_thinking(id: &str) -> bool`
 
