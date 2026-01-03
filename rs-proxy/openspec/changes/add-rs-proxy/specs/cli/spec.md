@@ -19,6 +19,8 @@ The system SHALL使用 argh 接受命令行配置参数。
 - **当** rs-proxy 以 `-b example.com` 或 `--base-url example.com` 启动时
 - **则** 应将请求代理到 `https://example.com`
 
+> **说明：** `base_url` 参数不包含协议前缀，系统在构造实际请求 URL 时自动添加 `https://`。
+
 ### 实现说明
 
 ```rust

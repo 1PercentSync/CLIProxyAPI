@@ -65,6 +65,12 @@ The system SHALL 对未知模型带思考后缀返回 HTTP 400 错误。
 - **则** The system SHALL 去除后缀并使用基础模型名称
 - **且** 不注入任何思考字段
 
+#### Scenario: 无效等级字符串
+- **当** 模型名称包含等级后缀（如 `claude-sonnet-4(superfast)`）
+- **且** 等级字符串不是有效值（none, auto, minimal, low, medium, high, xhigh）
+- **则** The system SHALL 返回 HTTP 400 错误
+- **且** 错误信息应说明等级无效
+
 #### Scenario: 空括号处理
 - **当** 模型名称包含空括号（如 `model()`）
 - **则** The system SHALL 去除空括号
@@ -235,7 +241,10 @@ pub fn inject_thinking_config(
     }
 
     // 5. 解析后缀值（数值或等级）并钳制
-    let thinking_config = resolve_thinking_config(thinking_value, model_info, protocol);
+    let thinking_config = match resolve_thinking_config(thinking_value, model_info, protocol) {
+        Ok(config) => config,
+        Err(e) => return InjectionResult::Error(e),
+    };
 
     // 6. 根据协议注入
     let injected = match protocol {
@@ -244,7 +253,7 @@ pub fn inject_thinking_config(
             let is_responses = is_responses_endpoint(request_path);
             inject_openai(body, &base_model, thinking_config, is_responses)
         }
-        Protocol::Anthropic => inject_anthropic(body, &base_model, thinking_config),
+        Protocol::Anthropic => inject_anthropic(body, &base_model, thinking_config, model_info),
         Protocol::Gemini => inject_gemini(body, &base_model, thinking_config),
     };
 
@@ -261,11 +270,14 @@ pub fn inject_thinking_config(
 /// 跨协议调用处理：
 /// - 模型有 min/max 范围：使用 clamp_budget 钳制
 /// - 模型无 min/max 范围（如 OpenAI 模型只有 Levels）：直接使用转换后的值，不钳制
+///
+/// 错误：
+/// - 无效等级字符串返回 InjectionError
 fn resolve_thinking_config(
     thinking_value: ThinkingValue,
     model_info: &ModelInfo,
     protocol: Protocol,
-) -> ThinkingConfig {
+) -> Result<ThinkingConfig, InjectionError> {
     let thinking = model_info.thinking.as_ref().unwrap();
     let model_uses_levels = thinking.levels.is_some();
 
@@ -305,29 +317,37 @@ fn resolve_thinking_config(
                     // 跨协议调用（如 OpenAI 调用 Claude），直接使用通用映射结果
                     effort
                 };
-                ThinkingConfig::Effort(final_effort.to_string())
+                Ok(ThinkingConfig::Effort(final_effort.to_string()))
             } else {
                 // 协议需要 Budget
-                ThinkingConfig::Budget(clamped)
+                Ok(ThinkingConfig::Budget(clamped))
             }
         }
         ThinkingValue::Level(level) => {
             // 等级后缀
             let level = level.to_lowercase();
 
+            // 验证等级字符串是否有效
+            if level_to_budget(&level).is_none() {
+                return Err(InjectionError {
+                    status: 400,
+                    message: format!("invalid thinking level: {}", level),
+                });
+            }
+
             if needs_effort {
                 // 协议需要 Effort
                 if let Some(levels) = thinking.levels {
                     // 模型有离散等级，clamp 到支持的等级
                     let clamped = clamp_effort_to_levels(&level, levels);
-                    ThinkingConfig::Effort(clamped.to_string())
+                    Ok(ThinkingConfig::Effort(clamped.to_string()))
                 } else {
                     // 跨协议调用（如 OpenAI 调用 Claude），直接使用输入的等级
-                    ThinkingConfig::Effort(level)
+                    Ok(ThinkingConfig::Effort(level))
                 }
             } else {
-                // 协议需要 Budget，将等级转换为预算
-                let budget = level_to_budget(&level).unwrap_or(8192); // 默认 medium
+                // 协议需要 Budget，将等级转换为预算（已验证，unwrap 安全）
+                let budget = level_to_budget(&level).unwrap();
                 let clamped = if has_budget_range {
                     // 模型有预算范围，进行钳制
                     clamp_budget(budget, thinking.min, thinking.max,
@@ -337,7 +357,7 @@ fn resolve_thinking_config(
                     // 直接使用转换后的预算值，让上游服务处理
                     budget
                 };
-                ThinkingConfig::Budget(clamped)
+                Ok(ThinkingConfig::Budget(clamped))
             }
         }
         ThinkingValue::None => unreachable!("None case handled earlier"),

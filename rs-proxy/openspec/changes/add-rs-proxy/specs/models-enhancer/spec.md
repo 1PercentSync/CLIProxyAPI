@@ -58,6 +58,14 @@ The system SHALL 根据模型的思考支持配置生成等级变体。
 
 ```rust
 use crate::models::registry::{get_model_info, ModelInfo, ThinkingSupport};
+use crate::protocol::Protocol;
+
+/// 模型信息（简化结构，实际根据协议响应格式定义）
+#[derive(Clone)]
+pub struct Model {
+    pub id: String,
+    // 其他字段根据协议响应格式添加...
+}
 
 /// 标准等级及其预算值（按预算升序排列）
 const STANDARD_LEVELS: &[(&str, i32)] = &[
@@ -87,16 +95,18 @@ fn get_supported_levels(thinking: &ThinkingSupport) -> Vec<&'static str> {
         supported.push("auto");
     }
 
-    // 找到向下覆盖的等级（第一个 <= min 的等级）
+    // 找到向下覆盖的等级：最大的 budget <= min 的等级
+    // 反向遍历，第一个满足条件的就是最大的
     let mut lower_bound_idx = None;
     for (i, &(_, budget)) in STANDARD_LEVELS.iter().enumerate().rev() {
-        if budget <= thinking.min && budget > 0 {  // 跳过 none
+        if budget <= thinking.min && budget > 0 {  // 跳过 none（通过 zero_allowed 处理）
             lower_bound_idx = Some(i);
             break;
         }
     }
 
-    // 找到向上覆盖的等级（第一个 >= max 的等级）
+    // 找到向上覆盖的等级：最小的 budget >= max 的等级
+    // 正向遍历，第一个满足条件的就是最小的
     let mut upper_bound_idx = None;
     for (i, &(_, budget)) in STANDARD_LEVELS.iter().enumerate() {
         if budget >= thinking.max {
@@ -106,8 +116,10 @@ fn get_supported_levels(thinking: &ThinkingSupport) -> Vec<&'static str> {
     }
 
     // 添加范围内的等级
-    let start = lower_bound_idx.unwrap_or(1);  // 默认从 minimal 开始
-    let end = upper_bound_idx.unwrap_or(STANDARD_LEVELS.len() - 1);
+    // 如果向下覆盖没找到（min 太小），从 minimal 开始
+    // 如果向上覆盖没找到（max 超过所有等级），使用 xhigh
+    let start = lower_bound_idx.unwrap_or(1);  // 1 = minimal
+    let end = upper_bound_idx.unwrap_or(STANDARD_LEVELS.len() - 1);  // 5 = xhigh
 
     for i in start..=end {
         let (level, _) = STANDARD_LEVELS[i];
@@ -120,7 +132,7 @@ fn get_supported_levels(thinking: &ThinkingSupport) -> Vec<&'static str> {
 }
 
 /// 增强模型列表，添加思考等级变体
-pub fn enhance_model_list(models: Vec<Model>, protocol: Protocol) -> Vec<Model> {
+pub fn enhance_model_list(models: Vec<Model>) -> Vec<Model> {
     let mut enhanced = models.clone();
 
     for model in &models {
