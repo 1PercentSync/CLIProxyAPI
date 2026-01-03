@@ -160,12 +160,12 @@
 
 模型无 levels，需要 `ThinkingConfig::Budget`，注入 `thinkingBudget`
 
-> **注意**：Gemini 协议对于 `(none)` 和 `(0)` 直接返回 `Budget(0)`，不走 clamp 逻辑。
+> **注意**：Gemini 2.5 没有 levels，`zero_allowed=false`，所以 `(none)` 和 `(0)` 需要 clamp 到 `min=128`。
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(0)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
+| `(none)` | `level_to_budget("none")` → 0 → `clamp_budget(0, 128, ...)` → 128 | `thinkingBudget: 128` |
+| `(0)` | `clamp_budget(0, 128, ...)` → 128 | `thinkingBudget: 128` |
 | `(auto)` | → -1（dynamic_allowed=true） | `thinkingBudget: -1` |
 | `(minimal)` | → 512 → 512 | `thinkingBudget: 512` |
 | `(low)` | → 1024 → 1024 | `thinkingBudget: 1024` |
@@ -345,20 +345,21 @@
 需要 `ThinkingConfig::Effort` 或 `ThinkingConfig::Disabled`，注入 `reasoning_effort`
 
 > **注意**：
+> - `(none)` 和 `(0)` 直接返回 `Disabled` → `reasoning_effort: "none"`，让上游 API 决定如何处理
 > - `clamp_effort_to_levels` 会先处理等级，"auto" 不在 levels 时回退到 "medium"
 > - "medium" 再 clamp 到 ["low", "high"] → "high"
 > - OpenAI 协议的 "auto" → "medium" 转换只对 levels 包含 "auto" 的模型生效
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | `clamp_effort_to_levels("none", ["low","high"])` → 不在列表 → 向上 clamp → "low" | `reasoning_effort: "low"` |
+| `(none)` | → `ThinkingConfig::Disabled` | `reasoning_effort: "none"` |
 | `(auto)` | levels 无 auto → 回退到 "medium" → clamp → "high" | `reasoning_effort: "high"` |
 | `(minimal)` | → 向上 clamp → "low" | `reasoning_effort: "low"` |
 | `(low)` | → "low" | `reasoning_effort: "low"` |
 | `(medium)` | → clamp → "high" | `reasoning_effort: "high"` |
 | `(high)` | → "high" | `reasoning_effort: "high"` |
 | `(xhigh)` | → 向上无更高 → 返回最高 "high" | `reasoning_effort: "high"` |
-| `(0)` | `budget_to_effort(0)` → "none" → clamp → "low" | `reasoning_effort: "low"` |
+| `(0)` | → `ThinkingConfig::Disabled` | `reasoning_effort: "none"` |
 | `(-1)` | `budget_to_effort(-1)` → "auto" → levels 无 auto → 回退 "medium" → clamp → "high" | `reasoning_effort: "high"` |
 | `(500)` | `clamp_budget(500, ...)` → 500 → `budget_to_effort(500)` → "minimal" → clamp → "low" | `reasoning_effort: "low"` |
 | `(8192)` | `clamp_budget(8192, ...)` → 8192 → `budget_to_effort(8192)` → "medium" → clamp → "high" | `reasoning_effort: "high"` |
