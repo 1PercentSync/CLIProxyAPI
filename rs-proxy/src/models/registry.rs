@@ -531,10 +531,13 @@ pub fn model_supports_thinking(id: &str) -> bool {
 }
 
 /// Get all models in the registry.
+///
+/// Returns a slice of all registered models. The slice is valid for the
+/// entire program lifetime since it references static data.
 pub fn get_all_models() -> &'static [&'static ModelInfo] {
-    // This is safe because MODELS is initialized once
-    // We need to use a different approach since LazyLock doesn't provide slice access directly
-    &[]
+    // LazyLock<Vec<T>> derefs to Vec<T>, and &Vec<T> coerces to &[T].
+    // Since MODELS is static, the reference has 'static lifetime.
+    &MODELS
 }
 
 /// Get the thinking levels for a model.
@@ -641,5 +644,21 @@ mod tests {
         let model = get_model_info("qwen3-coder-flash");
         assert!(model.is_some());
         assert!(model.unwrap().thinking.is_none());
+    }
+
+    #[test]
+    fn test_get_all_models() {
+        let all = get_all_models();
+        // Should have a reasonable number of models
+        assert!(all.len() > 30, "Expected >30 models, got {}", all.len());
+
+        // Should include known models
+        let has_claude = all.iter().any(|m| m.id == "claude-sonnet-4-5-20250929");
+        let has_gemini = all.iter().any(|m| m.id == "gemini-2.5-pro");
+        let has_openai = all.iter().any(|m| m.id == "gpt-5.1");
+
+        assert!(has_claude, "Should contain Claude model");
+        assert!(has_gemini, "Should contain Gemini model");
+        assert!(has_openai, "Should contain OpenAI model");
     }
 }
