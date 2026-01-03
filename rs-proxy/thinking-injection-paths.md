@@ -131,6 +131,7 @@
 模型无 levels，需要 `ThinkingConfig::Budget`，注入 `thinkingBudget`
 
 > **注意**：Gemini 协议对于 `(none)` 和 `(0)` 直接返回 `Budget(0)`，不走 clamp 逻辑。
+> Gemini 协议支持 `thinkingBudget: -1`（动态思考），所以 `(-1)` 直接透传。
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
@@ -142,7 +143,7 @@
 | `(medium)` | `level_to_budget("medium")` → 8192 → 8192 | `thinkingBudget: 8192` |
 | `(high)` | `level_to_budget("high")` → 24576 → 24576 | `thinkingBudget: 24576` |
 | `(xhigh)` | `level_to_budget("xhigh")` → 32768 → 32768 | `thinkingBudget: 32768` |
-| `(-1)` | `clamp_budget(-1, ..., auto_budget=16384)` → 16384 | `thinkingBudget: 16384` |
+| `(-1)` | Gemini 协议支持动态思考 → 直接透传 | `thinkingBudget: -1` |
 | `(500)` | `clamp_budget(500, ...)` → 1024 | `thinkingBudget: 1024` |
 | `(1024~100000)` | 直接使用 | `thinkingBudget: {输入值}` |
 | `(150000)` | `clamp_budget(150000, ...)` → 100000 | `thinkingBudget: 100000` |
