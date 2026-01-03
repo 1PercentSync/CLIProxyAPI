@@ -41,7 +41,6 @@
 | OpenAI | gpt-5.1 | ["none","low","medium","high"] | 0 | 0 | Level-based，无预算范围 |
 | OpenAI | gpt-5.2 | ["none","low","medium","high","xhigh"] | 0 | 0 | Level-based，含 xhigh |
 | Gemini 3 | gemini-3-pro-preview | ["low","high"] | 128 | 32768 | Level-based，有预算范围 |
-| iFlow | glm-4.6 | ["none","auto","minimal","low","medium","high","xhigh"] | 0 | 0 | Level-based，全等级支持 |
 
 ## 等级到预算映射表（通用）
 
@@ -386,83 +385,6 @@
 | `(50)` | `clamp_budget(50, ...)` → 128 | `budget_tokens: 128` |
 | `(128~32768)` | 直接使用 | `budget_tokens: {输入值}` |
 | `(50000)` | `clamp_budget(50000, ...)` → 32768 | `budget_tokens: 32768` |
-
----
-
-## 5. iFlow 模型（Level-based，全等级支持）
-
-**模型特征**：`levels = ["none", "auto", "minimal", "low", "medium", "high", "xhigh"]`, `min = 0`, `max = 0`
-
-以 `glm-4.6` 为例
-
-### 5.1 iFlow + OpenAI 协议（假设原生协议）
-
-需要 `ThinkingConfig::Effort` 或 `ThinkingConfig::Disabled`，注入 `reasoning_effort`
-
-> **注意**：虽然 iFlow 模型的 levels 包含 "auto"，但 OpenAI 协议不支持 `reasoning_effort: "auto"`，
-> 所以 "auto" 仍然会被转换为 "medium"。
-
-| 后缀 | 处理路径 | 最终值 |
-|------|---------|--------|
-| `(none)` | `clamp_effort_to_levels("none", levels)` → levels 包含 none → "none" | `reasoning_effort: "none"` |
-| `(auto)` | levels 包含 auto → "auto" → OpenAI 不支持 → "medium" | `reasoning_effort: "medium"` |
-| `(minimal)` | → "minimal" | `reasoning_effort: "minimal"` |
-| `(low)` | → "low" | `reasoning_effort: "low"` |
-| `(medium)` | → "medium" | `reasoning_effort: "medium"` |
-| `(high)` | → "high" | `reasoning_effort: "high"` |
-| `(xhigh)` | → "xhigh" | `reasoning_effort: "xhigh"` |
-| `(0)` | `budget_to_effort(0)` → "none" → clamp → "none" | `reasoning_effort: "none"` |
-| `(-1)` | `budget_to_effort(-1)` → "auto" → OpenAI 不支持 → "medium" | `reasoning_effort: "medium"` |
-| `(512)` | `budget_to_effort(512)` → "minimal" → clamp → "minimal" | `reasoning_effort: "minimal"` |
-| `(1024)` | `budget_to_effort(1024)` → "low" → clamp → "low" | `reasoning_effort: "low"` |
-| `(8192)` | `budget_to_effort(8192)` → "medium" → clamp → "medium" | `reasoning_effort: "medium"` |
-| `(24576)` | `budget_to_effort(24576)` → "high" → clamp → "high" | `reasoning_effort: "high"` |
-| `(50000)` | `budget_to_effort(50000)` → "xhigh" → clamp → "xhigh" | `reasoning_effort: "xhigh"` |
-
-### 5.2 iFlow + Anthropic 协议（跨协议）
-
-需要 `ThinkingConfig::Budget` 或 `ThinkingConfig::Disabled`，注入 `thinking.budget_tokens`
-
-> **注意**：
-> - 模型无预算范围（max=0），不做 clamp
-> - Anthropic 协议不支持 `budget_tokens: -1`，使用 `auto_budget` 或默认 8192
-
-| 后缀 | 处理路径 | 最终值 |
-|------|---------|--------|
-| `(none)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(auto)` | `level_to_budget("auto")` → -1 → Anthropic 不支持 → 8192 | `budget_tokens: 8192` |
-| `(minimal)` | `level_to_budget("minimal")` → 512 | `budget_tokens: 512` |
-| `(low)` | `level_to_budget("low")` → 1024 | `budget_tokens: 1024` |
-| `(medium)` | `level_to_budget("medium")` → 8192 | `budget_tokens: 8192` |
-| `(high)` | `level_to_budget("high")` → 24576 | `budget_tokens: 24576` |
-| `(xhigh)` | `level_to_budget("xhigh")` → 32768 | `budget_tokens: 32768` |
-| `(0)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(-1)` | Anthropic 不支持 → 8192 | `budget_tokens: 8192` |
-| `(8192)` | 直接使用（无 range 不 clamp） | `budget_tokens: 8192` |
-| `(50000)` | 直接使用（无 range 不 clamp） | `budget_tokens: 50000` |
-
-### 5.3 iFlow + Gemini 协议（跨协议）
-
-模型有 levels，Gemini 协议根据用户输入类型选择输出格式：
-- 等级后缀 → `thinkingLevel`
-- 数值后缀 → `thinkingBudget`（尊重用户意图）
-
-> **注意**：
-> - `(none)` 和 `(0)` 直接返回 `Budget(0)`
-> - 数值后缀直接使用 `thinkingBudget`
-
-| 后缀 | 处理路径 | 最终值 |
-|------|---------|--------|
-| `(none)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(0)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(auto)` | Gemini 协议特殊处理 → `ThinkingConfig::Budget(-1)` | `thinkingBudget: -1` |
-| `(minimal)` | → "minimal" | `thinkingLevel: "minimal"` |
-| `(low)` | → "low" | `thinkingLevel: "low"` |
-| `(medium)` | → "medium" | `thinkingLevel: "medium"` |
-| `(high)` | → "high" | `thinkingLevel: "high"` |
-| `(xhigh)` | → "xhigh" | `thinkingLevel: "xhigh"` |
-| `(-1)` | 数值后缀 → 直接使用 | `thinkingBudget: -1` |
-| `(8192)` | 数值后缀 → 直接使用 | `thinkingBudget: 8192` |
 
 ---
 
