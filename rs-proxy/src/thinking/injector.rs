@@ -128,6 +128,7 @@ fn resolve_thinking_config(
     model_info: &ModelInfo,
     protocol: Protocol,
 ) -> Result<ThinkingConfig, InjectionError> {
+    eprintln!("[DEBUG] resolve_thinking_config: value={:?}, model={}, protocol={:?}", thinking_value, model_info.id, protocol);
     let thinking = model_info.thinking.as_ref().unwrap();
     let model_uses_levels = thinking.levels.is_some();
 
@@ -142,16 +143,40 @@ fn resolve_thinking_config(
         Protocol::Gemini => model_uses_levels, // Gemini 2.5 no levels, Gemini 3 has levels
     };
 
+    // Helper: Check if we need to clamp "none" to another level
+    // OpenAI protocol can pass through "none" to let upstream API handle it
+    // Anthropic protocol can always disable thinking explicitly via { type: "disabled" }
+    // So we don't need to clamp for any protocol - just pass through the user's intent
+    let needs_none_clamp = false; // No longer needed - always respect user intent
+
     match thinking_value {
         ThinkingValue::Budget(budget) => {
-            // Handle disabled thinking first (before any clamping)
+            // Handle disabled thinking: budget == 0
             if budget == 0 {
-                if matches!(protocol, Protocol::Gemini) {
-                    // Gemini protocol: pass through 0 as Budget(0)
-                    // Let upstream protocol converter handle disabling thinking
+                eprintln!("[DEBUG] Budget is 0, handling for protocol: {:?}", protocol);
+                // For Gemini protocol, check if we should clamp or pass through 0
+                // - Models with levels (Gemini 3): pass through 0 (thinkingBudget: 0 disables thinking)
+                // - Models without levels but are native Gemini (Gemini 2.5): clamp to min
+                // - Cross-protocol calls (Claude + Gemini): pass through 0
+                let is_native_gemini_model = model_info.id.starts_with("gemini-");
+                if matches!(protocol, Protocol::Gemini) && model_uses_levels {
+                    // Gemini 3 (has levels): pass through 0 as Budget(0)
+                    eprintln!("[DEBUG] Gemini protocol + model has levels: returning Budget(0)");
                     return Ok(ThinkingConfig::Budget(0));
+                } else if matches!(protocol, Protocol::Gemini) && !model_uses_levels && is_native_gemini_model {
+                    // Gemini 2.5 (no levels, native Gemini model): fall through to clamp
+                    // zero_allowed=false means 0 should be clamped to min
+                    eprintln!("[DEBUG] Gemini protocol + native Gemini model without levels: will clamp");
+                } else if matches!(protocol, Protocol::Gemini) {
+                    // Cross-protocol (e.g., Claude + Gemini): pass through 0
+                    eprintln!("[DEBUG] Gemini protocol + cross-protocol call: returning Budget(0)");
+                    return Ok(ThinkingConfig::Budget(0));
+                } else if needs_none_clamp {
+                    // OpenAI protocol + model has levels without "none" - fall through to clamp
+                    eprintln!("[DEBUG] OpenAI protocol + model has levels without 'none', will clamp");
                 } else {
-                    // OpenAI/Anthropic protocol: return Disabled
+                    // Anthropic protocol, or model supports "none"
+                    eprintln!("[DEBUG] Returning Disabled");
                     return Ok(ThinkingConfig::Disabled);
                 }
             }
@@ -165,9 +190,12 @@ fn resolve_thinking_config(
             let effective_dynamic_allowed = thinking.dynamic_allowed && protocol_allows_dynamic;
 
             let clamped = if has_budget_range {
-                // For Effort output, -1 should stay as -1 to become "auto" → "medium"
-                // This ensures (-1) and (auto) have consistent semantics for OpenAI protocol
-                if needs_effort && budget == -1 {
+                // For Gemini protocol, -1 should pass through (Gemini supports thinkingBudget: -1)
+                if budget == -1 && matches!(protocol, Protocol::Gemini) {
+                    budget // Pass through -1 for Gemini protocol
+                } else if needs_effort && budget == -1 {
+                    // For Effort output, -1 should stay as -1 to become "auto" → "medium"
+                    // This ensures (-1) and (auto) have consistent semantics for OpenAI protocol
                     budget // Pass through -1, budget_to_effort(-1) → "auto" → "medium"
                 } else {
                     clamp_budget(
@@ -180,8 +208,19 @@ fn resolve_thinking_config(
                     )
                 }
             } else {
-                // Model has no budget range (like OpenAI models), use raw value
-                budget
+                // Model has no budget range (like OpenAI models)
+                // For Gemini protocol, allow -1 to pass through (Gemini supports dynamic)
+                if budget == -1 && matches!(protocol, Protocol::Gemini) {
+                    budget // Pass through -1 for Gemini protocol
+                } else if budget == -1 && !effective_dynamic_allowed {
+                    // Convert -1 to default budget for protocols that don't support dynamic
+                    thinking.auto_budget.unwrap_or(8192)
+                } else if budget == 0 && needs_none_clamp {
+                    // OpenAI protocol + model has levels without "none", use default
+                    thinking.auto_budget.unwrap_or(8192)
+                } else {
+                    budget
+                }
             };
 
             // For Gemini protocol with numeric suffix, respect user intent: use Budget directly
@@ -216,14 +255,30 @@ fn resolve_thinking_config(
             // Level suffix
             let level = level.to_lowercase();
 
-            // Handle disabled thinking first
+            // Handle "none" level
+            // Only OpenAI protocol needs to clamp when model's levels don't include "none"
+            // Anthropic protocol can always disable thinking explicitly
             if level == "none" {
-                if matches!(protocol, Protocol::Gemini) {
-                    // Gemini protocol: pass through 0 as Budget(0)
-                    // Let upstream protocol converter handle disabling thinking
+                eprintln!("[DEBUG] Level is 'none', handling for protocol: {:?}", protocol);
+                // For Gemini protocol, same logic as budget == 0
+                let is_native_gemini_model = model_info.id.starts_with("gemini-");
+                if matches!(protocol, Protocol::Gemini) && model_uses_levels {
+                    // Gemini 3 (has levels): pass through 0 as Budget(0)
+                    eprintln!("[DEBUG] Gemini protocol + model has levels: returning Budget(0) for 'none' level");
                     return Ok(ThinkingConfig::Budget(0));
+                } else if matches!(protocol, Protocol::Gemini) && !model_uses_levels && is_native_gemini_model {
+                    // Gemini 2.5 (no levels, native Gemini model): fall through to clamp
+                    eprintln!("[DEBUG] Gemini protocol + native Gemini model without levels: will clamp 'none' level");
+                } else if matches!(protocol, Protocol::Gemini) {
+                    // Cross-protocol (e.g., Claude + Gemini): pass through 0
+                    eprintln!("[DEBUG] Gemini protocol + cross-protocol call: returning Budget(0) for 'none' level");
+                    return Ok(ThinkingConfig::Budget(0));
+                } else if needs_none_clamp {
+                    // OpenAI protocol + model has levels without "none" - fall through to clamp
+                    eprintln!("[DEBUG] OpenAI protocol + model has levels without 'none', will clamp");
                 } else {
-                    // OpenAI/Anthropic protocol: return Disabled
+                    // Anthropic protocol, or model supports "none"
+                    eprintln!("[DEBUG] Returning Disabled");
                     return Ok(ThinkingConfig::Disabled);
                 }
             }
@@ -231,6 +286,7 @@ fn resolve_thinking_config(
             // Handle (auto) level for Gemini protocol: use Budget(-1) for dynamic thinking
             // This respects user intent: "auto" means dynamic, Gemini supports thinkingBudget: -1
             if level == "auto" && matches!(protocol, Protocol::Gemini) {
+                eprintln!("[DEBUG] Level is 'auto' with Gemini protocol: returning Budget(-1)");
                 return Ok(ThinkingConfig::Budget(-1));
             }
 
@@ -884,7 +940,7 @@ mod tests {
         match result {
             InjectionResult::Injected(body) => {
                 assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
-                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 16384); // auto_budget
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1); // Gemini uses -1 for dynamic thinking
             }
             _ => panic!("Expected Injected with auto budget"),
         }
@@ -919,12 +975,14 @@ mod tests {
             "/v1/messages",
         );
 
+        // Gemini protocol supports thinkingBudget: -1 for dynamic thinking
+        // So -1 is passed through directly, not converted to auto_budget
         match result {
             InjectionResult::Injected(body) => {
                 assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
-                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 16384); // auto_budget
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1);
             }
-            _ => panic!("Expected Injected with auto budget"),
+            _ => panic!("Expected Injected with dynamic budget"),
         }
     }
 
@@ -979,12 +1037,13 @@ mod tests {
             "/v1/models",
         );
 
+        // Gemini 2.5 has no levels and zero_allowed=false, so (none) clamps to min=128
         match result {
             InjectionResult::Injected(body) => {
                 assert_eq!(body["model"], "gemini-2.5-pro");
-                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 128);
             }
-            _ => panic!("Expected Injected with budget 0"),
+            _ => panic!("Expected Injected with budget 128"),
         }
     }
 
@@ -998,12 +1057,13 @@ mod tests {
             "/v1/models",
         );
 
+        // Gemini 2.5 has no levels and zero_allowed=false, so (0) clamps to min=128
         match result {
             InjectionResult::Injected(body) => {
                 assert_eq!(body["model"], "gemini-2.5-pro");
-                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 128);
             }
-            _ => panic!("Expected Injected with budget 0"),
+            _ => panic!("Expected Injected with budget 128"),
         }
     }
 
@@ -2491,12 +2551,14 @@ mod tests {
             "/v1/chat/completions",
         );
 
+        // Gemini 3 + OpenAI: (none) returns Disabled → reasoning_effort: "none"
+        // Let upstream API decide how to handle it
         match result {
             InjectionResult::Injected(body) => {
                 assert_eq!(body["model"], "gemini-3-pro-preview");
-                assert_eq!(body["reasoning_effort"], "low"); // none not in levels → clamp up to low
+                assert_eq!(body["reasoning_effort"], "none");
             }
-            _ => panic!("Expected Injected with low effort"),
+            _ => panic!("Expected Injected with none effort"),
         }
     }
 
@@ -2624,12 +2686,14 @@ mod tests {
             "/v1/chat/completions",
         );
 
+        // Gemini 3 + OpenAI: (0) returns Disabled → reasoning_effort: "none"
+        // Let upstream API decide how to handle it
         match result {
             InjectionResult::Injected(body) => {
                 assert_eq!(body["model"], "gemini-3-pro-preview");
-                assert_eq!(body["reasoning_effort"], "low"); // 0 → none → clamp to low
+                assert_eq!(body["reasoning_effort"], "none");
             }
-            _ => panic!("Expected Injected with low effort"),
+            _ => panic!("Expected Injected with none effort"),
         }
     }
 
