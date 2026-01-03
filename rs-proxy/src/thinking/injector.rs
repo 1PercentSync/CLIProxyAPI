@@ -390,4 +390,2551 @@ mod tests {
             _ => panic!("Expected Error"),
         }
     }
+
+    // ===== Claude Model Tests (Budget-based) =====
+
+    // Claude + Anthropic Protocol (Native)
+    #[test]
+    fn test_claude_anthropic_none_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(none)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["type"], "disabled");
+            }
+            _ => panic!("Expected Injected with disabled thinking"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_auto_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(auto)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["budget_tokens"], 16384); // auto_budget
+            }
+            _ => panic!("Expected Injected with auto budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_minimal_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(minimal)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["budget_tokens"], 1024); // clamped to min
+            }
+            _ => panic!("Expected Injected with clamped minimal budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_low_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(low)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(low)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["budget_tokens"], 1024); // exactly min
+            }
+            _ => panic!("Expected Injected with low budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_medium_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(medium)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(medium)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["budget_tokens"], 8192);
+            }
+            _ => panic!("Expected Injected with medium budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_high_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(high)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(high)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["budget_tokens"], 24576);
+            }
+            _ => panic!("Expected Injected with high budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_xhigh_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(xhigh)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(xhigh)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["budget_tokens"], 32768);
+            }
+            _ => panic!("Expected Injected with xhigh budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_zero_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(0)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["type"], "disabled");
+            }
+            _ => panic!("Expected Injected with disabled thinking"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_negative_one_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(-1)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["budget_tokens"], 16384); // auto_budget
+            }
+            _ => panic!("Expected Injected with auto budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_500_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(500)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(500)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["budget_tokens"], 1024); // clamped to min
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_in_range_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(50000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(50000)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["budget_tokens"], 50000); // within range
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_anthropic_above_max_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(150000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(150000)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["thinking"]["budget_tokens"], 100000); // clamped to max
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    // Claude + OpenAI Protocol (Cross-protocol)
+    #[test]
+    fn test_claude_openai_none_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(none)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "none");
+            }
+            _ => panic!("Expected Injected with none effort"),
+        }
+    }
+
+    #[test]
+    fn test_claude_openai_auto_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(auto)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "medium"); // auto → medium
+            }
+            _ => panic!("Expected Injected with medium effort"),
+        }
+    }
+
+    #[test]
+    fn test_claude_openai_minimal_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(minimal)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "minimal");
+            }
+            _ => panic!("Expected Injected with minimal effort"),
+        }
+    }
+
+    #[test]
+    fn test_claude_openai_zero_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(0)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "none");
+            }
+            _ => panic!("Expected Injected with none effort"),
+        }
+    }
+
+    #[test]
+    fn test_claude_openai_negative_one_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(-1)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "medium"); // -1 → auto → medium
+            }
+            _ => panic!("Expected Injected with medium effort"),
+        }
+    }
+
+    #[test]
+    fn test_claude_openai_500_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(500)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(500)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "low"); // 500 → clamp to 1024 → low
+            }
+            _ => panic!("Expected Injected with low effort"),
+        }
+    }
+
+    #[test]
+    fn test_claude_openai_512_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(512)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(512)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "low"); // 512 → clamp to 1024 → low
+            }
+            _ => panic!("Expected Injected with low effort"),
+        }
+    }
+
+    #[test]
+    fn test_claude_openai_8192_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(8192)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(8192)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "medium");
+            }
+            _ => panic!("Expected Injected with medium effort"),
+        }
+    }
+
+    #[test]
+    fn test_claude_openai_24576_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(24576)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(24576)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "high");
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    #[test]
+    fn test_claude_openai_32768_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(32768)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(32768)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "xhigh");
+            }
+            _ => panic!("Expected Injected with xhigh effort"),
+        }
+    }
+
+    #[test]
+    fn test_claude_openai_100000_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(100000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(100000)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["reasoning_effort"], "xhigh");
+            }
+            _ => panic!("Expected Injected with xhigh effort"),
+        }
+    }
+
+    // Claude + Gemini Protocol (Cross-protocol)
+    #[test]
+    fn test_claude_gemini_none_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(none)",
+            Protocol::Gemini,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with budget 0"),
+        }
+    }
+
+    #[test]
+    fn test_claude_gemini_zero_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(0)",
+            Protocol::Gemini,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with budget 0"),
+        }
+    }
+
+    #[test]
+    fn test_claude_gemini_auto_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(auto)",
+            Protocol::Gemini,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 16384); // auto_budget
+            }
+            _ => panic!("Expected Injected with auto budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_gemini_minimal_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(minimal)",
+            Protocol::Gemini,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 1024); // clamped to min
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_gemini_negative_one_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(-1)",
+            Protocol::Gemini,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 16384); // auto_budget
+            }
+            _ => panic!("Expected Injected with auto budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_gemini_in_range_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(50000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(50000)",
+            Protocol::Gemini,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 50000); // within range
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_claude_gemini_above_max_suffix() {
+        let body = json!({"model": "claude-sonnet-4-5-20250929(150000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "claude-sonnet-4-5-20250929(150000)",
+            Protocol::Gemini,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "claude-sonnet-4-5-20250929");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 100000); // clamped to max
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    // ===== Gemini 2.5 Model Tests (Budget-based) =====
+
+    // Gemini 2.5 + Gemini Protocol (Native)
+    #[test]
+    fn test_gemini_25_gemini_none_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(none)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(none)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with budget 0"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_zero_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(0)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(0)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with budget 0"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_auto_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(auto)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(auto)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1); // dynamic_allowed=true
+            }
+            _ => panic!("Expected Injected with dynamic budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_minimal_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(minimal)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(minimal)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 512);
+            }
+            _ => panic!("Expected Injected with minimal budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_low_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(low)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(low)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 1024);
+            }
+            _ => panic!("Expected Injected with low budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_medium_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(medium)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(medium)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 8192);
+            }
+            _ => panic!("Expected Injected with medium budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_high_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(high)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(high)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 24576);
+            }
+            _ => panic!("Expected Injected with high budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_xhigh_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(xhigh)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(xhigh)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 32768);
+            }
+            _ => panic!("Expected Injected with xhigh budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_negative_one_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(-1)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(-1)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1); // dynamic_allowed=true
+            }
+            _ => panic!("Expected Injected with dynamic budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_50_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(50)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(50)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 128); // clamped to min
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_in_range_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(16384)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(16384)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 16384); // within range
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_gemini_above_max_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(50000)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(50000)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 32768); // clamped to max
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    // Gemini 2.5 + OpenAI Protocol (Cross-protocol)
+    #[test]
+    fn test_gemini_25_openai_none_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(none)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "none");
+            }
+            _ => panic!("Expected Injected with none effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_openai_auto_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(auto)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "medium"); // auto → medium
+            }
+            _ => panic!("Expected Injected with medium effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_openai_minimal_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(minimal)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "minimal");
+            }
+            _ => panic!("Expected Injected with minimal effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_openai_zero_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(0)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "none");
+            }
+            _ => panic!("Expected Injected with none effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_openai_negative_one_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(-1)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "medium"); // -1 → auto → medium
+            }
+            _ => panic!("Expected Injected with medium effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_openai_50_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(50)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(50)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "minimal"); // 50 → clamp to 128 → minimal
+            }
+            _ => panic!("Expected Injected with minimal effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_openai_512_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(512)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(512)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "minimal");
+            }
+            _ => panic!("Expected Injected with minimal effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_openai_8192_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(8192)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(8192)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "medium");
+            }
+            _ => panic!("Expected Injected with medium effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_openai_24576_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(24576)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(24576)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "high");
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_openai_32768_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(32768)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(32768)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "xhigh");
+            }
+            _ => panic!("Expected Injected with xhigh effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_openai_50000_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(50000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(50000)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["reasoning_effort"], "xhigh"); // 50000 → clamp to 32768 → xhigh
+            }
+            _ => panic!("Expected Injected with xhigh effort"),
+        }
+    }
+
+    // Gemini 2.5 + Anthropic Protocol (Cross-protocol)
+    #[test]
+    fn test_gemini_25_anthropic_none_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(none)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["thinking"]["type"], "disabled");
+            }
+            _ => panic!("Expected Injected with disabled thinking"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_anthropic_auto_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(auto)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["thinking"]["budget_tokens"], 16448); // (128+32768)/2
+            }
+            _ => panic!("Expected Injected with calculated auto budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_anthropic_minimal_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(minimal)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["thinking"]["budget_tokens"], 512);
+            }
+            _ => panic!("Expected Injected with minimal budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_anthropic_zero_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(0)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["thinking"]["type"], "disabled");
+            }
+            _ => panic!("Expected Injected with disabled thinking"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_anthropic_negative_one_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(-1)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["thinking"]["budget_tokens"], 16448); // (128+32768)/2
+            }
+            _ => panic!("Expected Injected with calculated auto budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_anthropic_50_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(50)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(50)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["thinking"]["budget_tokens"], 128); // clamped to min
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_anthropic_in_range_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(16384)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(16384)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["thinking"]["budget_tokens"], 16384); // within range
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_25_anthropic_50000_suffix() {
+        let body = json!({"model": "gemini-2.5-pro(50000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-2.5-pro(50000)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-2.5-pro");
+                assert_eq!(body["thinking"]["budget_tokens"], 32768); // clamped to max
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    // ===== OpenAI Model Tests (Level-based, no budget range) =====
+
+    // OpenAI + OpenAI Protocol (Native)
+    #[test]
+    fn test_openai_openai_none_suffix() {
+        let body = json!({"model": "gpt-5.1(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(none)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "none");
+            }
+            _ => panic!("Expected Injected with none effort"),
+        }
+    }
+
+    #[test]
+    fn test_openai_openai_auto_suffix() {
+        let body = json!({"model": "gpt-5.1(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(auto)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "medium"); // auto → medium
+            }
+            _ => panic!("Expected Injected with medium effort"),
+        }
+    }
+
+    #[test]
+    fn test_openai_openai_minimal_suffix() {
+        let body = json!({"model": "gpt-5.1(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(minimal)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "low"); // minimal not in levels → clamp up to low
+            }
+            _ => panic!("Expected Injected with low effort"),
+        }
+    }
+
+    #[test]
+    fn test_openai_openai_low_suffix() {
+        let body = json!({"model": "gpt-5.1(low)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(low)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "low");
+            }
+            _ => panic!("Expected Injected with low effort"),
+        }
+    }
+
+    #[test]
+    fn test_openai_openai_medium_suffix() {
+        let body = json!({"model": "gpt-5.1(medium)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(medium)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "medium");
+            }
+            _ => panic!("Expected Injected with medium effort"),
+        }
+    }
+
+    #[test]
+    fn test_openai_openai_high_suffix() {
+        let body = json!({"model": "gpt-5.1(high)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(high)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "high");
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    #[test]
+    fn test_openai_openai_xhigh_suffix() {
+        let body = json!({"model": "gpt-5.1(xhigh)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(xhigh)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "high"); // xhigh not in levels → clamp to highest (high)
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    #[test]
+    fn test_openai_openai_zero_suffix() {
+        let body = json!({"model": "gpt-5.1(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(0)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "none");
+            }
+            _ => panic!("Expected Injected with none effort"),
+        }
+    }
+
+    #[test]
+    fn test_openai_openai_negative_one_suffix() {
+        let body = json!({"model": "gpt-5.1(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(-1)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "medium"); // -1 → auto → medium
+            }
+            _ => panic!("Expected Injected with medium effort"),
+        }
+    }
+
+    #[test]
+    fn test_openai_openai_8192_suffix() {
+        let body = json!({"model": "gpt-5.1(8192)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(8192)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "medium");
+            }
+            _ => panic!("Expected Injected with medium effort"),
+        }
+    }
+
+    #[test]
+    fn test_openai_openai_50000_suffix() {
+        let body = json!({"model": "gpt-5.1(50000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(50000)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["reasoning_effort"], "high"); // 50000 → xhigh → clamp to high
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    // OpenAI + Anthropic Protocol (Cross-protocol)
+    #[test]
+    fn test_openai_anthropic_none_suffix() {
+        let body = json!({"model": "gpt-5.1(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(none)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["type"], "disabled");
+            }
+            _ => panic!("Expected Injected with disabled thinking"),
+        }
+    }
+
+    #[test]
+    fn test_openai_anthropic_auto_suffix() {
+        let body = json!({"model": "gpt-5.1(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(auto)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["budget_tokens"], 8192); // default
+            }
+            _ => panic!("Expected Injected with default budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_anthropic_minimal_suffix() {
+        let body = json!({"model": "gpt-5.1(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(minimal)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["budget_tokens"], 512);
+            }
+            _ => panic!("Expected Injected with minimal budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_anthropic_low_suffix() {
+        let body = json!({"model": "gpt-5.1(low)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(low)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["budget_tokens"], 1024);
+            }
+            _ => panic!("Expected Injected with low budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_anthropic_medium_suffix() {
+        let body = json!({"model": "gpt-5.1(medium)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(medium)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["budget_tokens"], 8192);
+            }
+            _ => panic!("Expected Injected with medium budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_anthropic_high_suffix() {
+        let body = json!({"model": "gpt-5.1(high)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(high)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["budget_tokens"], 24576);
+            }
+            _ => panic!("Expected Injected with high budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_anthropic_xhigh_suffix() {
+        let body = json!({"model": "gpt-5.1(xhigh)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(xhigh)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["budget_tokens"], 32768);
+            }
+            _ => panic!("Expected Injected with xhigh budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_anthropic_zero_suffix() {
+        let body = json!({"model": "gpt-5.1(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(0)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["type"], "disabled");
+            }
+            _ => panic!("Expected Injected with disabled thinking"),
+        }
+    }
+
+    #[test]
+    fn test_openai_anthropic_negative_one_suffix() {
+        let body = json!({"model": "gpt-5.1(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(-1)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["budget_tokens"], 8192); // default
+            }
+            _ => panic!("Expected Injected with default budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_anthropic_8192_suffix() {
+        let body = json!({"model": "gpt-5.1(8192)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(8192)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["budget_tokens"], 8192); // no clamp (no range)
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_anthropic_50000_suffix() {
+        let body = json!({"model": "gpt-5.1(50000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(50000)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["thinking"]["budget_tokens"], 50000); // no clamp (no range)
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    // OpenAI + Gemini Protocol (Cross-protocol)
+    #[test]
+    fn test_openai_gemini_none_suffix() {
+        let body = json!({"model": "gpt-5.1(none)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(none)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with budget 0"),
+        }
+    }
+
+    #[test]
+    fn test_openai_gemini_zero_suffix() {
+        let body = json!({"model": "gpt-5.1(0)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(0)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with budget 0"),
+        }
+    }
+
+    #[test]
+    fn test_openai_gemini_auto_suffix() {
+        let body = json!({"model": "gpt-5.1(auto)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(auto)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1); // Gemini special handling
+            }
+            _ => panic!("Expected Injected with dynamic budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_gemini_minimal_suffix() {
+        let body = json!({"model": "gpt-5.1(minimal)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(minimal)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "low"); // clamp up
+            }
+            _ => panic!("Expected Injected with low level"),
+        }
+    }
+
+    #[test]
+    fn test_openai_gemini_low_suffix() {
+        let body = json!({"model": "gpt-5.1(low)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(low)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "low");
+            }
+            _ => panic!("Expected Injected with low level"),
+        }
+    }
+
+    #[test]
+    fn test_openai_gemini_medium_suffix() {
+        let body = json!({"model": "gpt-5.1(medium)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(medium)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "medium");
+            }
+            _ => panic!("Expected Injected with medium level"),
+        }
+    }
+
+    #[test]
+    fn test_openai_gemini_high_suffix() {
+        let body = json!({"model": "gpt-5.1(high)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(high)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "high");
+            }
+            _ => panic!("Expected Injected with high level"),
+        }
+    }
+
+    #[test]
+    fn test_openai_gemini_xhigh_suffix() {
+        let body = json!({"model": "gpt-5.1(xhigh)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(xhigh)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "high"); // clamp to highest
+            }
+            _ => panic!("Expected Injected with high level"),
+        }
+    }
+
+    #[test]
+    fn test_openai_gemini_negative_one_suffix() {
+        let body = json!({"model": "gpt-5.1(-1)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(-1)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1);
+            }
+            _ => panic!("Expected Injected with dynamic budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_gemini_8192_suffix() {
+        let body = json!({"model": "gpt-5.1(8192)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(8192)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 8192);
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_openai_gemini_50000_suffix() {
+        let body = json!({"model": "gpt-5.1(50000)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gpt-5.1(50000)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gpt-5.1");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 50000);
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    // ===== Gemini 3 Model Tests (Level-based, with budget range) =====
+
+    // Gemini 3 + Gemini Protocol (Native)
+    #[test]
+    fn test_gemini_3_gemini_none_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(none)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(none)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with budget 0"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_zero_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(0)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(0)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with budget 0"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_auto_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(auto)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(auto)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1); // Gemini special handling
+            }
+            _ => panic!("Expected Injected with dynamic budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_minimal_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(minimal)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(minimal)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "low"); // clamp up
+            }
+            _ => panic!("Expected Injected with low level"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_low_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(low)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(low)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "low");
+            }
+            _ => panic!("Expected Injected with low level"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_medium_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(medium)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(medium)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "high"); // not in list → clamp up
+            }
+            _ => panic!("Expected Injected with high level"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_high_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(high)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(high)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "high");
+            }
+            _ => panic!("Expected Injected with high level"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_xhigh_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(xhigh)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(xhigh)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "high"); // clamp to highest
+            }
+            _ => panic!("Expected Injected with high level"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_negative_one_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(-1)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(-1)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1); // dynamic_allowed=true
+            }
+            _ => panic!("Expected Injected with dynamic budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_50_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(50)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(50)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 128); // clamped to min
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_500_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(500)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(500)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 500); // within range
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_1024_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(1024)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(1024)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 1024);
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_8192_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(8192)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(8192)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 8192);
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_24576_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(24576)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(24576)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 24576);
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_gemini_50000_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(50000)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(50000)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 32768); // clamped to max
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    // Gemini 3 + OpenAI Protocol (Cross-protocol)
+    #[test]
+    fn test_gemini_3_openai_none_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(none)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "low"); // none not in levels → clamp up to low
+            }
+            _ => panic!("Expected Injected with low effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_auto_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(auto)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "high"); // auto → medium → clamp to high
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_minimal_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(minimal)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "low"); // clamp up
+            }
+            _ => panic!("Expected Injected with low effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_low_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(low)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(low)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "low");
+            }
+            _ => panic!("Expected Injected with low effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_medium_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(medium)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(medium)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "high"); // clamp to high
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_high_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(high)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(high)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "high");
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_xhigh_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(xhigh)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(xhigh)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "high"); // clamp to highest
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_zero_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(0)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "low"); // 0 → none → clamp to low
+            }
+            _ => panic!("Expected Injected with low effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_negative_one_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(-1)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "high"); // -1 → auto → medium → clamp to high
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_500_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(500)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(500)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "low"); // 500 → minimal → clamp to low
+            }
+            _ => panic!("Expected Injected with low effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_8192_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(8192)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(8192)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "high"); // 8192 → medium → clamp to high
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_openai_50000_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(50000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(50000)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["reasoning_effort"], "high"); // 50000 → clamp to 32768 → xhigh → clamp to high
+            }
+            _ => panic!("Expected Injected with high effort"),
+        }
+    }
+
+    // Gemini 3 + Anthropic Protocol (Cross-protocol)
+    #[test]
+    fn test_gemini_3_anthropic_none_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(none)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["type"], "disabled");
+            }
+            _ => panic!("Expected Injected with disabled thinking"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_auto_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(auto)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 16448); // (128+32768)/2
+            }
+            _ => panic!("Expected Injected with calculated auto budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_minimal_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(minimal)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 512);
+            }
+            _ => panic!("Expected Injected with minimal budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_low_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(low)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(low)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 1024);
+            }
+            _ => panic!("Expected Injected with low budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_medium_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(medium)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(medium)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 8192);
+            }
+            _ => panic!("Expected Injected with medium budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_high_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(high)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(high)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 24576);
+            }
+            _ => panic!("Expected Injected with high budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_xhigh_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(xhigh)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(xhigh)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 32768);
+            }
+            _ => panic!("Expected Injected with xhigh budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_zero_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(0)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["type"], "disabled");
+            }
+            _ => panic!("Expected Injected with disabled thinking"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_negative_one_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(-1)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 16448); // (128+32768)/2
+            }
+            _ => panic!("Expected Injected with calculated auto budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_50_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(50)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(50)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 128); // clamped to min
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_16384_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(16384)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(16384)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 16384); // within range
+            }
+            _ => panic!("Expected Injected with exact budget"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_anthropic_50000_suffix() {
+        let body = json!({"model": "gemini-3-pro-preview(50000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-pro-preview(50000)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-pro-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 32768); // clamped to max
+            }
+            _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
 }
