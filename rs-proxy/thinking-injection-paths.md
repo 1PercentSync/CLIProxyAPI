@@ -136,7 +136,7 @@
 |------|---------|--------|
 | `(none)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
 | `(0)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(auto)` | `level_to_budget("auto")` → -1 → `clamp_budget(-1, ..., auto_budget=16384)` → 16384 | `thinkingBudget: 16384` |
+| `(auto)` | Gemini 协议特殊处理 → `ThinkingConfig::Budget(-1)` | `thinkingBudget: -1` |
 | `(minimal)` | `level_to_budget("minimal")` → 512 → `clamp_budget(512, ...)` → 1024 | `thinkingBudget: 1024` |
 | `(low)` | `level_to_budget("low")` → 1024 → `clamp_budget` → 1024 | `thinkingBudget: 1024` |
 | `(medium)` | `level_to_budget("medium")` → 8192 → 8192 | `thinkingBudget: 8192` |
