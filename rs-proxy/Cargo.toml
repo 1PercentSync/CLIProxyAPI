@@ -1,0 +1,37 @@
+[package]
+name = "rs-proxy"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+description = "A lightweight reverse proxy for injecting thinking configuration into API requests"
+
+[dependencies]
+# Async runtime
+tokio = { version = "*", features = ["rt-multi-thread", "macros", "net", "io-util", "sync"] }
+tokio-stream = "*"
+futures = "*"
+
+# HTTP server
+axum = "*"
+tower-http = { version = "*", features = ["cors", "trace"] }
+
+# HTTP client
+reqwest = { version = "*", features = ["json", "stream"] }
+bytes = "*"
+
+# CLI
+argh = "*"
+
+# Serialization
+serde = { version = "*", features = ["derive"] }
+serde_json = "*"
+
+# Error handling
+thiserror = "*"
+
+# Regex
+regex = "*"
+
+# Logging
+tracing = "*"
+tracing-subscriber = { version = "*", features = ["env-filter"] }
