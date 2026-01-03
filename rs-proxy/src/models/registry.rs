@@ -1,7 +1,12 @@
 //! Static model registry.
 //!
-//! This module maintains a static registry of models with thinking support.
+//! This module maintains a static registry of all known models.
 //! Model definitions are synchronized with CLIProxyAPI's `internal/registry/model_definitions.go`.
+//!
+//! Note: ALL models must be registered, not just those with thinking support.
+//! This is required because RS-Proxy needs to distinguish between:
+//! - Unknown models with thinking suffix → return 400 error
+//! - Known models without thinking support → strip suffix and passthrough
 
 use std::sync::LazyLock;
 
@@ -408,8 +413,56 @@ static IFLOW_MODELS: &[ModelInfo] = &[
     },
 ];
 
+/// iFlow models without thinking support from GetIFlowModels()
+static IFLOW_MODELS_NO_THINKING: &[ModelInfo] = &[
+    ModelInfo { id: "tstars2.0", max_completion_tokens: 0, thinking: None },
+    // qwen3-coder-plus is in QWEN_MODELS with more complete info
+    ModelInfo { id: "qwen3-max", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "qwen3-vl-plus", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "qwen3-max-preview", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "kimi-k2-0905", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "kimi-k2", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "kimi-k2-thinking", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "deepseek-v3.2-chat", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "deepseek-v3.2-reasoner", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "deepseek-v3.2", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "deepseek-v3.1", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "deepseek-r1", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "deepseek-v3", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "qwen3-32b", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "qwen3-235b-a22b-thinking-2507", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "qwen3-235b-a22b-instruct", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "qwen3-235b", max_completion_tokens: 0, thinking: None },
+    ModelInfo { id: "minimax-m2", max_completion_tokens: 0, thinking: None },
+];
+
+/// Qwen models from GetQwenModels() - no thinking support
+static QWEN_MODELS: &[ModelInfo] = &[
+    ModelInfo {
+        id: "qwen3-coder-plus",
+        max_completion_tokens: 8192,
+        thinking: None,
+    },
+    ModelInfo {
+        id: "qwen3-coder-flash",
+        max_completion_tokens: 2048,
+        thinking: None,
+    },
+    ModelInfo {
+        id: "vision-model",
+        max_completion_tokens: 2048,
+        thinking: None,
+    },
+];
+
 /// Antigravity model configurations (merged from GetAntigravityModelConfig)
 static ANTIGRAVITY_MODELS: &[ModelInfo] = &[
+    // gemini-2.5-computer-use-preview-10-2025 - no thinking support
+    ModelInfo {
+        id: "gemini-2.5-computer-use-preview-10-2025",
+        max_completion_tokens: 0,
+        thinking: None,
+    },
     // gemini-claude-sonnet-4-5-thinking
     ModelInfo {
         id: "gemini-claude-sonnet-4-5-thinking",
@@ -446,6 +499,8 @@ static MODELS: LazyLock<Vec<&'static ModelInfo>> = LazyLock::new(|| {
     models.extend(GEMINI_AISTUDIO_MODELS.iter());
     models.extend(OPENAI_MODELS.iter());
     models.extend(IFLOW_MODELS.iter());
+    models.extend(IFLOW_MODELS_NO_THINKING.iter());
+    models.extend(QWEN_MODELS.iter());
     models.extend(ANTIGRAVITY_MODELS.iter());
 
     models
@@ -567,5 +622,24 @@ mod tests {
         let levels = thinking.levels.unwrap();
         assert!(levels.contains(&"auto"));
         assert!(levels.contains(&"xhigh"));
+    }
+
+    #[test]
+    fn test_iflow_models_no_thinking() {
+        // These models should be in registry but without thinking support
+        let model = get_model_info("deepseek-r1");
+        assert!(model.is_some());
+        assert!(model.unwrap().thinking.is_none());
+
+        let model = get_model_info("kimi-k2");
+        assert!(model.is_some());
+        assert!(model.unwrap().thinking.is_none());
+    }
+
+    #[test]
+    fn test_qwen_models() {
+        let model = get_model_info("qwen3-coder-flash");
+        assert!(model.is_some());
+        assert!(model.unwrap().thinking.is_none());
     }
 }
