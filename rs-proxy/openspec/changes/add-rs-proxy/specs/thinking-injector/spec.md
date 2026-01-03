@@ -169,8 +169,8 @@ The system SHALL 在等级转换为数值预算后，将预算钳制到模型支
 ```rust
 use crate::models::registry::{get_model_info, ModelInfo};
 use crate::protocol::{Protocol, inject_openai, inject_anthropic, inject_gemini};
-use crate::thinking::parser::parse_model_suffix;
-use crate::thinking::models::{level_to_budget, budget_to_effort, clamp_budget};
+use crate::thinking::parser::{parse_model_suffix, ParsedModel, ThinkingValue};
+use crate::thinking::models::{level_to_budget, budget_to_effort, clamp_budget, clamp_effort_to_levels};
 use crate::thinking::ThinkingConfig;
 
 /// 检测是否为 OpenAI Responses 端点
@@ -203,17 +203,18 @@ pub fn inject_thinking_config(
     request_path: &str,  // 用于检测 OpenAI 端点类型
 ) -> InjectionResult {
     // 1. 解析后缀
-    let (base_model, suffix) = parse_model_suffix(model_with_suffix);
+    let parsed = parse_model_suffix(model_with_suffix);
+    let base_model = parsed.base_name;
 
     // 2. 无后缀或空后缀，去除括号并透传
-    let suffix = match suffix {
-        Some(s) if !s.is_empty() => s,
-        _ => {
+    let thinking_value = match parsed.thinking {
+        ThinkingValue::None => {
             // 空括号或无后缀：更新模型名（去除括号）后透传
             let mut body = body;
             body["model"] = serde_json::Value::String(base_model);
             return InjectionResult::PassThrough(body);
         }
+        v => v,
     };
 
     // 3. 检查模型是否已知
@@ -234,7 +235,7 @@ pub fn inject_thinking_config(
     }
 
     // 5. 解析后缀值（数值或等级）并钳制
-    let thinking_config = resolve_thinking_config(&suffix, model_info, protocol);
+    let thinking_config = resolve_thinking_config(thinking_value, model_info, protocol);
 
     // 6. 根据协议注入
     let injected = match protocol {
@@ -261,7 +262,7 @@ pub fn inject_thinking_config(
 /// - 模型有 min/max 范围：使用 clamp_budget 钳制
 /// - 模型无 min/max 范围（如 OpenAI 模型只有 Levels）：直接使用转换后的值，不钳制
 fn resolve_thinking_config(
-    suffix: &str,
+    thinking_value: ThinkingValue,
     model_info: &ModelInfo,
     protocol: Protocol,
 ) -> ThinkingConfig {
@@ -282,96 +283,65 @@ fn resolve_thinking_config(
         Protocol::Gemini => model_uses_levels,
     };
 
-    // 判断后缀是数值还是等级
-    if let Ok(budget) = suffix.parse::<i32>() {
-        // 数值后缀
-        let clamped = if has_budget_range {
-            // 模型有预算范围，进行钳制
-            clamp_budget(budget, thinking.min, thinking.max,
-                         thinking.zero_allowed, thinking.dynamic_allowed)
-        } else {
-            // 模型没有预算范围（如 OpenAI 模型），直接使用原始值
-            budget
-        };
-
-        if needs_effort {
-            // 协议需要 Effort，将预算转换为等级
-            let effort = budget_to_effort(clamped, thinking.levels);
-            let final_effort = if let Some(levels) = thinking.levels {
-                // 模型有离散等级，clamp 到支持的等级
-                clamp_effort_to_levels(effort, levels)
-            } else {
-                // 跨协议调用（如 OpenAI 调用 Claude），直接使用通用映射结果
-                effort
-            };
-            ThinkingConfig::Effort(final_effort.to_string())
-        } else {
-            // 协议需要 Budget
-            ThinkingConfig::Budget(clamped)
-        }
-    } else {
-        // 等级后缀
-        let level = suffix.to_lowercase();
-
-        if needs_effort {
-            // 协议需要 Effort
-            if let Some(levels) = thinking.levels {
-                // 模型有离散等级，clamp 到支持的等级
-                let clamped = clamp_effort_to_levels(&level, levels);
-                ThinkingConfig::Effort(clamped.to_string())
-            } else {
-                // 跨协议调用（如 OpenAI 调用 Claude），直接使用输入的等级
-                ThinkingConfig::Effort(level)
-            }
-        } else {
-            // 协议需要 Budget，将等级转换为预算
-            let budget = level_to_budget(&level).unwrap_or(8192); // 默认 medium
+    match thinking_value {
+        ThinkingValue::Budget(budget) => {
+            // 数值后缀
             let clamped = if has_budget_range {
                 // 模型有预算范围，进行钳制
                 clamp_budget(budget, thinking.min, thinking.max,
                              thinking.zero_allowed, thinking.dynamic_allowed)
             } else {
-                // 模型没有预算范围（如 OpenAI 模型通过 Anthropic 协议调用）
-                // 直接使用转换后的预算值，让上游服务处理
+                // 模型没有预算范围（如 OpenAI 模型），直接使用原始值
                 budget
             };
-            ThinkingConfig::Budget(clamped)
+
+            if needs_effort {
+                // 协议需要 Effort，将预算转换为等级
+                let effort = budget_to_effort(clamped, thinking.levels);
+                let final_effort = if let Some(levels) = thinking.levels {
+                    // 模型有离散等级，clamp 到支持的等级
+                    clamp_effort_to_levels(effort, levels)
+                } else {
+                    // 跨协议调用（如 OpenAI 调用 Claude），直接使用通用映射结果
+                    effort
+                };
+                ThinkingConfig::Effort(final_effort.to_string())
+            } else {
+                // 协议需要 Budget
+                ThinkingConfig::Budget(clamped)
+            }
         }
-    }
-}
+        ThinkingValue::Level(level) => {
+            // 等级后缀
+            let level = level.to_lowercase();
 
-/// 向上 clamp 等级到模型支持的等级列表
-fn clamp_effort_to_levels<'a>(effort: &str, levels: &'a [&'a str]) -> &'a str {
-    // 等级优先级顺序（auto 特殊处理：如果模型支持则保留，否则当作 medium）
-    const LEVEL_ORDER: &[&str] = &["none", "minimal", "low", "medium", "high", "xhigh"];
-
-    // auto 特殊处理：如果模型支持 auto 则直接返回，否则当作 medium 处理
-    let effort = if effort == "auto" {
-        if levels.contains(&"auto") {
-            return "auto";
+            if needs_effort {
+                // 协议需要 Effort
+                if let Some(levels) = thinking.levels {
+                    // 模型有离散等级，clamp 到支持的等级
+                    let clamped = clamp_effort_to_levels(&level, levels);
+                    ThinkingConfig::Effort(clamped.to_string())
+                } else {
+                    // 跨协议调用（如 OpenAI 调用 Claude），直接使用输入的等级
+                    ThinkingConfig::Effort(level)
+                }
+            } else {
+                // 协议需要 Budget，将等级转换为预算
+                let budget = level_to_budget(&level).unwrap_or(8192); // 默认 medium
+                let clamped = if has_budget_range {
+                    // 模型有预算范围，进行钳制
+                    clamp_budget(budget, thinking.min, thinking.max,
+                                 thinking.zero_allowed, thinking.dynamic_allowed)
+                } else {
+                    // 模型没有预算范围（如 OpenAI 模型通过 Anthropic 协议调用）
+                    // 直接使用转换后的预算值，让上游服务处理
+                    budget
+                };
+                ThinkingConfig::Budget(clamped)
+            }
         }
-        "medium"  // auto 回退到 medium
-    } else {
-        effort
-    };
-
-    // 如果等级在支持列表中，直接返回
-    if levels.contains(&effort) {
-        return levels.iter().find(|&&l| l == effort).unwrap();
+        ThinkingValue::None => unreachable!("None case handled earlier"),
     }
-
-    // 找到输入等级的位置
-    let effort_idx = LEVEL_ORDER.iter().position(|&l| l == effort).unwrap_or(3);
-
-    // 向上 clamp：找到第一个 >= 当前等级的支持等级
-    for &level in LEVEL_ORDER[effort_idx..].iter() {
-        if levels.contains(&level) {
-            return levels.iter().find(|&&l| l == level).unwrap();
-        }
-    }
-
-    // 如果没有更高的，返回最高支持等级
-    levels.last().unwrap()
 }
 ```
 
