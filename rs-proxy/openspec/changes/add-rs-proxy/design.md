@@ -103,3 +103,108 @@ RS-Proxy 是一个独立的轻量级 Rust 反向代理，透明转发 API 请求
 ## 迁移计划
 
 不适用——新项目，无需迁移。
+
+## 模块架构
+
+### 目录结构
+
+```
+src/
+├── main.rs                 # 入口点
+├── config.rs               # CLI 参数（argh）
+├── error.rs                # 错误类型（thiserror）
+├── protocol/
+│   ├── mod.rs              # Protocol 枚举 + detect_protocol()
+│   ├── openai.rs           # inject_openai()
+│   ├── anthropic.rs        # inject_anthropic()
+│   └── gemini.rs           # inject_gemini()
+├── thinking/
+│   ├── mod.rs              # ThinkingConfig 枚举 + 模块导出
+│   ├── parser.rs           # parse_model_suffix()
+│   ├── models.rs           # 等级/预算映射函数
+│   └── injector.rs         # inject_thinking_config()
+├── models/
+│   ├── registry.rs         # 静态模型注册表
+│   └── enhancer.rs         # 模型列表增强
+└── proxy/
+    └── client.rs           # HTTP 客户端 + SSE 转发
+```
+
+### 模块依赖关系
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              main.rs                                        │
+│                         (axum 路由 + 服务器)                                 │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           proxy/client.rs                                   │
+│                    (HTTP 请求转发 + SSE 流处理)                              │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+          ┌───────────────────────┼───────────────────────┐
+          │                       │                       │
+          ▼                       ▼                       ▼
+┌─────────────────┐   ┌─────────────────────┐   ┌─────────────────┐
+│ protocol/mod.rs │   │ thinking/injector.rs│   │models/enhancer.rs│
+│                 │   │                     │   │                 │
+│ • Protocol 枚举 │   │ • ThinkingConfig    │   │ • 模型列表增强  │
+│ • detect_       │   │ • inject_thinking_  │   │                 │
+│   protocol()    │   │   config()          │   │                 │
+└────────┬────────┘   └──────────┬──────────┘   └────────┬────────┘
+         │                       │                       │
+         │            ┌──────────┼──────────┐            │
+         │            │          │          │            │
+         ▼            ▼          ▼          ▼            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     models/registry.rs                          │
+│              (ModelInfo, ThinkingSupport, 静态注册表)            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 公共类型定义位置
+
+| 类型 | 定义位置 | 使用者 |
+|------|----------|--------|
+| `Protocol` | `protocol/mod.rs` | `thinking/injector.rs`, `models/enhancer.rs`, `proxy/client.rs` |
+| `ThinkingConfig` | `thinking/mod.rs` | `thinking/injector.rs`, `protocol/*.rs` |
+| `ModelInfo` | `models/registry.rs` | `thinking/injector.rs`, `models/enhancer.rs` |
+| `ThinkingSupport` | `models/registry.rs` | `thinking/injector.rs`, `thinking/models.rs` |
+
+### 请求处理流程
+
+```
+客户端请求
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. 协议检测 (protocol/mod.rs)                                   │
+│    detect_protocol(path, headers) → Protocol                    │
+└─────────────────────────────────┬───────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 2. 思考注入 (thinking/injector.rs)                              │
+│    inject_thinking_config(body, model, protocol, path)          │
+│    → InjectionResult::Injected / PassThrough / Error            │
+│                                                                 │
+│    内部流程：                                                    │
+│    ├── parse_model_suffix() → 解析后缀                          │
+│    ├── get_model_info() → 查询注册表                            │
+│    ├── resolve_thinking_config() → 转换 + 钳制                  │
+│    └── inject_{openai,anthropic,gemini}() → 协议特定注入        │
+└─────────────────────────────────┬───────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 3. 代理转发 (proxy/client.rs)                                   │
+│    forward_request(modified_body) → 上游响应                    │
+│    forward_stream() → SSE 流式转发                              │
+└─────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+                             客户端响应
+```
+
