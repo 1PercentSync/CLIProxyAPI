@@ -3,6 +3,8 @@
 //! This module parses thinking configuration from model name suffixes,
 //! consistent with CLIProxyAPI's `NormalizeThinkingModel()` logic.
 
+use super::{FixedThinking, ThinkingIntent};
+
 /// Thinking configuration value type.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ThinkingValue {
@@ -12,6 +14,33 @@ pub enum ThinkingValue {
     Budget(i32),
     /// Level string (e.g., "high", "auto", "none").
     Level(String),
+}
+
+impl ThinkingValue {
+    /// Convert parsed value to user intent.
+    ///
+    /// This classifies the raw parsed value into one of three intents:
+    /// - `Disabled`: `(none)` or `(0)` → user wants to disable thinking
+    /// - `Dynamic`: `(auto)` or `(-1)` → user wants dynamic/auto thinking
+    /// - `Fixed`: other levels or budgets → user specified a concrete value
+    ///
+    /// Returns `None` for `ThinkingValue::None` (no suffix).
+    pub fn to_intent(&self) -> Option<ThinkingIntent> {
+        match self {
+            ThinkingValue::None => None,
+            ThinkingValue::Budget(0) => Some(ThinkingIntent::Disabled),
+            ThinkingValue::Budget(-1) => Some(ThinkingIntent::Dynamic),
+            ThinkingValue::Budget(b) => Some(ThinkingIntent::Fixed(FixedThinking::Budget(*b))),
+            ThinkingValue::Level(level) => {
+                let level_lower = level.to_lowercase();
+                match level_lower.as_str() {
+                    "none" => Some(ThinkingIntent::Disabled),
+                    "auto" => Some(ThinkingIntent::Dynamic),
+                    _ => Some(ThinkingIntent::Fixed(FixedThinking::Level(level_lower))),
+                }
+            }
+        }
+    }
 }
 
 /// Parsed model information.
@@ -196,5 +225,92 @@ mod tests {
 
         let result = parse_model_suffix("model(xhigh)");
         assert_eq!(result.thinking, ThinkingValue::Level("xhigh".to_string()));
+    }
+
+    // ===== to_intent() Tests =====
+
+    #[test]
+    fn test_to_intent_none_value() {
+        assert_eq!(ThinkingValue::None.to_intent(), None);
+    }
+
+    #[test]
+    fn test_to_intent_disabled() {
+        // Budget 0 → Disabled
+        assert_eq!(
+            ThinkingValue::Budget(0).to_intent(),
+            Some(ThinkingIntent::Disabled)
+        );
+
+        // Level "none" → Disabled
+        assert_eq!(
+            ThinkingValue::Level("none".to_string()).to_intent(),
+            Some(ThinkingIntent::Disabled)
+        );
+
+        // Case insensitive
+        assert_eq!(
+            ThinkingValue::Level("NONE".to_string()).to_intent(),
+            Some(ThinkingIntent::Disabled)
+        );
+    }
+
+    #[test]
+    fn test_to_intent_dynamic() {
+        // Budget -1 → Dynamic
+        assert_eq!(
+            ThinkingValue::Budget(-1).to_intent(),
+            Some(ThinkingIntent::Dynamic)
+        );
+
+        // Level "auto" → Dynamic
+        assert_eq!(
+            ThinkingValue::Level("auto".to_string()).to_intent(),
+            Some(ThinkingIntent::Dynamic)
+        );
+
+        // Case insensitive
+        assert_eq!(
+            ThinkingValue::Level("AUTO".to_string()).to_intent(),
+            Some(ThinkingIntent::Dynamic)
+        );
+    }
+
+    #[test]
+    fn test_to_intent_fixed_budget() {
+        assert_eq!(
+            ThinkingValue::Budget(8192).to_intent(),
+            Some(ThinkingIntent::Fixed(FixedThinking::Budget(8192)))
+        );
+
+        assert_eq!(
+            ThinkingValue::Budget(16384).to_intent(),
+            Some(ThinkingIntent::Fixed(FixedThinking::Budget(16384)))
+        );
+
+        // Negative budgets (other than -1) are still Fixed
+        assert_eq!(
+            ThinkingValue::Budget(-100).to_intent(),
+            Some(ThinkingIntent::Fixed(FixedThinking::Budget(-100)))
+        );
+    }
+
+    #[test]
+    fn test_to_intent_fixed_level() {
+        assert_eq!(
+            ThinkingValue::Level("high".to_string()).to_intent(),
+            Some(ThinkingIntent::Fixed(FixedThinking::Level("high".to_string())))
+        );
+
+        assert_eq!(
+            ThinkingValue::Level("low".to_string()).to_intent(),
+            Some(ThinkingIntent::Fixed(FixedThinking::Level("low".to_string())))
+        );
+
+        // Levels are lowercased
+        assert_eq!(
+            ThinkingValue::Level("HIGH".to_string()).to_intent(),
+            Some(ThinkingIntent::Fixed(FixedThinking::Level("high".to_string())))
+        );
     }
 }
