@@ -22,6 +22,9 @@ pub struct ThinkingSupport {
     pub zero_allowed: bool,
     /// Whether -1 is a valid value (dynamic thinking budget).
     pub dynamic_allowed: bool,
+    /// Default budget for "auto" when dynamic_allowed=false.
+    /// If None, falls back to (min + max) / 2.
+    pub auto_budget: Option<i32>,
     /// Discrete reasoning effort levels (e.g., "low", "medium", "high").
     /// When set, the model uses level-based reasoning instead of token budgets.
     pub levels: Option<&'static [&'static str]>,
@@ -60,7 +63,8 @@ static CLAUDE_MODELS: &[ModelInfo] = &[
             min: 1024,
             max: 100000,
             zero_allowed: false,
-            dynamic_allowed: true,
+            dynamic_allowed: false, // Claude API doesn't support budget_tokens=-1
+            auto_budget: Some(16384), // Default for (auto) since dynamic not supported
             levels: None,
         }),
     },
@@ -72,7 +76,8 @@ static CLAUDE_MODELS: &[ModelInfo] = &[
             min: 1024,
             max: 100000,
             zero_allowed: false,
-            dynamic_allowed: true,
+            dynamic_allowed: false, // Claude API doesn't support budget_tokens=-1
+            auto_budget: Some(16384), // Default for (auto) since dynamic not supported
             levels: None,
         }),
     },
@@ -84,7 +89,8 @@ static CLAUDE_MODELS: &[ModelInfo] = &[
             min: 1024,
             max: 100000,
             zero_allowed: false,
-            dynamic_allowed: true,
+            dynamic_allowed: false, // Claude API doesn't support budget_tokens=-1
+            auto_budget: Some(16384), // Default for (auto) since dynamic not supported
             levels: None,
         }),
     },
@@ -96,7 +102,8 @@ static CLAUDE_MODELS: &[ModelInfo] = &[
             min: 1024,
             max: 100000,
             zero_allowed: false,
-            dynamic_allowed: true,
+            dynamic_allowed: false, // Claude API doesn't support budget_tokens=-1
+            auto_budget: Some(16384), // Default for (auto) since dynamic not supported
             levels: None,
         }),
     },
@@ -108,7 +115,8 @@ static CLAUDE_MODELS: &[ModelInfo] = &[
             min: 1024,
             max: 100000,
             zero_allowed: false,
-            dynamic_allowed: true,
+            dynamic_allowed: false, // Claude API doesn't support budget_tokens=-1
+            auto_budget: Some(16384), // Default for (auto) since dynamic not supported
             levels: None,
         }),
     },
@@ -120,7 +128,8 @@ static CLAUDE_MODELS: &[ModelInfo] = &[
             min: 1024,
             max: 100000,
             zero_allowed: false,
-            dynamic_allowed: true,
+            dynamic_allowed: false, // Claude API doesn't support budget_tokens=-1
+            auto_budget: Some(16384), // Default for (auto) since dynamic not supported
             levels: None,
         }),
     },
@@ -143,6 +152,7 @@ static GEMINI_MODELS: &[ModelInfo] = &[
             max: 32768,
             zero_allowed: false,
             dynamic_allowed: true,
+            auto_budget: None,
             levels: None,
         }),
     },
@@ -155,6 +165,7 @@ static GEMINI_MODELS: &[ModelInfo] = &[
             max: 24576,
             zero_allowed: true,
             dynamic_allowed: true,
+            auto_budget: None,
             levels: None,
         }),
     },
@@ -167,6 +178,7 @@ static GEMINI_MODELS: &[ModelInfo] = &[
             max: 24576,
             zero_allowed: true,
             dynamic_allowed: true,
+            auto_budget: None,
             levels: None,
         }),
     },
@@ -179,6 +191,7 @@ static GEMINI_MODELS: &[ModelInfo] = &[
             max: 32768,
             zero_allowed: false,
             dynamic_allowed: true,
+            auto_budget: None,
             levels: Some(&["low", "high"]),
         }),
     },
@@ -191,6 +204,7 @@ static GEMINI_MODELS: &[ModelInfo] = &[
             max: 32768,
             zero_allowed: false,
             dynamic_allowed: true,
+            auto_budget: None,
             levels: Some(&["minimal", "low", "medium", "high"]),
         }),
     },
@@ -203,6 +217,7 @@ static GEMINI_MODELS: &[ModelInfo] = &[
             max: 32768,
             zero_allowed: false,
             dynamic_allowed: true,
+            auto_budget: None,
             levels: Some(&["low", "high"]),
         }),
     },
@@ -219,6 +234,7 @@ static GEMINI_AISTUDIO_MODELS: &[ModelInfo] = &[
             max: 32768,
             zero_allowed: false,
             dynamic_allowed: true,
+            auto_budget: None,
             levels: None,
         }),
     },
@@ -231,6 +247,7 @@ static GEMINI_AISTUDIO_MODELS: &[ModelInfo] = &[
             max: 24576,
             zero_allowed: true,
             dynamic_allowed: true,
+            auto_budget: None,
             levels: None,
         }),
     },
@@ -243,6 +260,7 @@ static GEMINI_AISTUDIO_MODELS: &[ModelInfo] = &[
             max: 24576,
             zero_allowed: true,
             dynamic_allowed: true,
+            auto_budget: None,
             levels: None,
         }),
     },
@@ -271,6 +289,7 @@ static OPENAI_MODELS: &[ModelInfo] = &[
             max: 0,
             zero_allowed: false,
             dynamic_allowed: false,
+            auto_budget: None,
             levels: Some(&["minimal", "low", "medium", "high"]),
         }),
     },
@@ -283,6 +302,7 @@ static OPENAI_MODELS: &[ModelInfo] = &[
             max: 0,
             zero_allowed: false,
             dynamic_allowed: false,
+            auto_budget: None,
             levels: Some(&["low", "medium", "high"]),
         }),
     },
@@ -295,6 +315,7 @@ static OPENAI_MODELS: &[ModelInfo] = &[
             max: 0,
             zero_allowed: false,
             dynamic_allowed: false,
+            auto_budget: None,
             levels: Some(&["low", "medium", "high"]),
         }),
     },
@@ -307,6 +328,7 @@ static OPENAI_MODELS: &[ModelInfo] = &[
             max: 0,
             zero_allowed: false,
             dynamic_allowed: false,
+            auto_budget: None,
             levels: Some(&["none", "low", "medium", "high"]),
         }),
     },
@@ -319,6 +341,7 @@ static OPENAI_MODELS: &[ModelInfo] = &[
             max: 0,
             zero_allowed: false,
             dynamic_allowed: false,
+            auto_budget: None,
             levels: Some(&["low", "medium", "high"]),
         }),
     },
@@ -331,6 +354,7 @@ static OPENAI_MODELS: &[ModelInfo] = &[
             max: 0,
             zero_allowed: false,
             dynamic_allowed: false,
+            auto_budget: None,
             levels: Some(&["low", "medium", "high"]),
         }),
     },
@@ -343,6 +367,7 @@ static OPENAI_MODELS: &[ModelInfo] = &[
             max: 0,
             zero_allowed: false,
             dynamic_allowed: false,
+            auto_budget: None,
             levels: Some(&["low", "medium", "high", "xhigh"]),
         }),
     },
@@ -355,6 +380,7 @@ static OPENAI_MODELS: &[ModelInfo] = &[
             max: 0,
             zero_allowed: false,
             dynamic_allowed: false,
+            auto_budget: None,
             levels: Some(&["none", "low", "medium", "high", "xhigh"]),
         }),
     },
@@ -367,73 +393,10 @@ static OPENAI_MODELS: &[ModelInfo] = &[
             max: 0,
             zero_allowed: false,
             dynamic_allowed: false,
+            auto_budget: None,
             levels: Some(&["low", "medium", "high", "xhigh"]),
         }),
     },
-];
-
-/// iFlow models with thinking support from GetIFlowModels()
-/// Only models with Thinking != nil are included
-static IFLOW_MODELS: &[ModelInfo] = &[
-    // GLM-4.6
-    ModelInfo {
-        id: "glm-4.6",
-        max_completion_tokens: 0, // Not specified in Go code
-        thinking: Some(ThinkingSupport {
-            min: 0,
-            max: 0,
-            zero_allowed: false,
-            dynamic_allowed: false,
-            levels: Some(&["none", "auto", "minimal", "low", "medium", "high", "xhigh"]),
-        }),
-    },
-    // GLM-4.7
-    ModelInfo {
-        id: "glm-4.7",
-        max_completion_tokens: 0,
-        thinking: Some(ThinkingSupport {
-            min: 0,
-            max: 0,
-            zero_allowed: false,
-            dynamic_allowed: false,
-            levels: Some(&["none", "auto", "minimal", "low", "medium", "high", "xhigh"]),
-        }),
-    },
-    // MiniMax-M2.1
-    ModelInfo {
-        id: "minimax-m2.1",
-        max_completion_tokens: 0,
-        thinking: Some(ThinkingSupport {
-            min: 0,
-            max: 0,
-            zero_allowed: false,
-            dynamic_allowed: false,
-            levels: Some(&["none", "auto", "minimal", "low", "medium", "high", "xhigh"]),
-        }),
-    },
-];
-
-/// iFlow models without thinking support from GetIFlowModels()
-static IFLOW_MODELS_NO_THINKING: &[ModelInfo] = &[
-    ModelInfo { id: "tstars2.0", max_completion_tokens: 0, thinking: None },
-    // qwen3-coder-plus is in QWEN_MODELS with more complete info
-    ModelInfo { id: "qwen3-max", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "qwen3-vl-plus", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "qwen3-max-preview", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "kimi-k2-0905", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "kimi-k2", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "kimi-k2-thinking", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "deepseek-v3.2-chat", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "deepseek-v3.2-reasoner", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "deepseek-v3.2", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "deepseek-v3.1", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "deepseek-r1", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "deepseek-v3", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "qwen3-32b", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "qwen3-235b-a22b-thinking-2507", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "qwen3-235b-a22b-instruct", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "qwen3-235b", max_completion_tokens: 0, thinking: None },
-    ModelInfo { id: "minimax-m2", max_completion_tokens: 0, thinking: None },
 ];
 
 /// Qwen models from GetQwenModels() - no thinking support
@@ -472,6 +435,7 @@ static ANTIGRAVITY_MODELS: &[ModelInfo] = &[
             max: 200000,
             zero_allowed: false,
             dynamic_allowed: true,
+            auto_budget: Some(16384),
             levels: None,
         }),
     },
@@ -484,6 +448,7 @@ static ANTIGRAVITY_MODELS: &[ModelInfo] = &[
             max: 200000,
             zero_allowed: false,
             dynamic_allowed: true,
+            auto_budget: Some(16384),
             levels: None,
         }),
     },
@@ -498,8 +463,6 @@ static MODELS: LazyLock<Vec<&'static ModelInfo>> = LazyLock::new(|| {
     models.extend(GEMINI_MODELS.iter());
     models.extend(GEMINI_AISTUDIO_MODELS.iter());
     models.extend(OPENAI_MODELS.iter());
-    models.extend(IFLOW_MODELS.iter());
-    models.extend(IFLOW_MODELS_NO_THINKING.iter());
     models.extend(QWEN_MODELS.iter());
     models.extend(ANTIGRAVITY_MODELS.iter());
 
@@ -614,29 +577,6 @@ mod tests {
         // Non-existent model
         let levels = get_model_thinking_levels("nonexistent");
         assert!(levels.is_none());
-    }
-
-    #[test]
-    fn test_iflow_models() {
-        let model = get_model_info("glm-4.6");
-        assert!(model.is_some());
-        let thinking = model.unwrap().thinking.as_ref().unwrap();
-        assert!(thinking.levels.is_some());
-        let levels = thinking.levels.unwrap();
-        assert!(levels.contains(&"auto"));
-        assert!(levels.contains(&"xhigh"));
-    }
-
-    #[test]
-    fn test_iflow_models_no_thinking() {
-        // These models should be in registry but without thinking support
-        let model = get_model_info("deepseek-r1");
-        assert!(model.is_some());
-        assert!(model.unwrap().thinking.is_none());
-
-        let model = get_model_info("kimi-k2");
-        assert!(model.is_some());
-        assert!(model.unwrap().thinking.is_none());
     }
 
     #[test]
