@@ -1,5 +1,32 @@
 ## ADDED Requirements
 
+### Requirement: ThinkingConfig 枚举定义
+
+The system SHALL 定义 `ThinkingConfig` 枚举，作为协议间传递思考配置的统一类型。
+
+**文件：** `src/thinking/mod.rs`
+
+> **说明：** `ThinkingConfig` 枚举是 thinking 模块的公共类型，用于：
+> - `thinking/injector.rs`：作为 `resolve_thinking_config()` 的返回值
+> - `protocol/*.rs`：作为 `inject_*()` 函数的输入参数
+
+```rust
+/// 思考配置类型
+///
+/// 表示经过解析和转换后的思考配置，准备注入到请求体中。
+/// 具体类型由目标协议决定：
+/// - OpenAI 协议：使用 Effort（等级字符串）
+/// - Anthropic 协议：使用 Budget（数值）
+/// - Gemini 协议：根据模型版本（2.5 用 Budget，3 用 Effort）
+#[derive(Debug, Clone, PartialEq)]
+pub enum ThinkingConfig {
+    /// 数值预算（tokens），用于 Anthropic 和 Gemini 2.5
+    Budget(i32),
+    /// 努力等级字符串，用于 OpenAI 和 Gemini 3
+    Effort(String),
+}
+```
+
 ### Requirement: 统一思考注入入口
 
 The system SHALL 提供统一的思考配置注入入口，协调解析、验证、映射和注入流程。
@@ -140,10 +167,11 @@ The system SHALL 在等级转换为数值预算后，将预算钳制到模型支
 ### 实现说明
 
 ```rust
-use crate::models::registry::{get_model_info, model_supports_thinking};
-use crate::protocol::Protocol;
+use crate::models::registry::{get_model_info, ModelInfo};
+use crate::protocol::{Protocol, inject_openai, inject_anthropic, inject_gemini};
 use crate::thinking::parser::parse_model_suffix;
 use crate::thinking::models::{level_to_budget, budget_to_effort, clamp_budget};
+use crate::thinking::ThinkingConfig;
 
 /// 检测是否为 OpenAI Responses 端点
 /// 根据请求路径判断使用哪种字段格式
