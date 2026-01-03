@@ -3,7 +3,12 @@
     "allow": [
       "Bash(openspec validate:*)",
       "mcp__context7__resolve-library-id",
-      "WebSearch"
+      "WebSearch",
+      "Bash(curl:*)",
+      "Bash(cargo check:*)",
+      "mcp__tavily__tavily_search",
+      "mcp__tavily__tavily_extract",
+      "mcp__context7__query-docs"
     ]
   }
 }
