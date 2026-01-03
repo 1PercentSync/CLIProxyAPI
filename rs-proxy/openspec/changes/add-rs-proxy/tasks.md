@@ -12,6 +12,7 @@
   - tokio-stream
   - tracing, tracing-subscriber
   - thiserror
+  - regex
 
 ## 2. 核心基础设施
 

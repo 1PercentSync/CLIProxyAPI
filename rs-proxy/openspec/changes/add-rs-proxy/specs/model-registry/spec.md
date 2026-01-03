@@ -104,3 +104,32 @@ pub fn model_supports_thinking(id: &str) -> bool {
 - 使用 `std::sync::LazyLock` 实现静态初始化（Rust 1.80+）
 - 模型 ID 必须与 CLIProxyAPI 完全匹配
 - `ThinkingSupport` 字段含义与 Go 版本一致
+
+### 模型去重与合并规则
+
+CLIProxyAPI 中的 Gemini 模型分为多个函数（`GetGeminiModels`、`GetGeminiVertexModels`、`GetGeminiCLIModels`、`GetAIStudioModels`），同一模型 ID 可能出现在多个函数中，但参数略有不同。
+
+**合并规则：**
+
+RS-Proxy 只需保留一份模型定义，当同一模型 ID 出现在多个来源时，按以下优先级合并：
+
+1. **官方 API 为权威来源** - `GetGeminiModels()` 最权威
+2. **Vertex 次之** - `GetGeminiVertexModels()`
+3. **CLI/AIStudio 补充** - `GetGeminiCLIModels()`、`GetAIStudioModels()` 用于补充缺失字段
+
+**合并策略：**
+- 使用最权威来源的参数值作为基础
+- 缺失的参数从次权威来源补充
+- **不覆盖**已有参数值
+
+**示例：**
+```
+gemini-2.5-pro 出现在多个函数中：
+- GetGeminiModels(): Thinking.Min=128, Thinking.Max=32768
+- GetAIStudioModels(): Thinking.Min=128, Thinking.Max=32768
+
+取 GetGeminiModels() 的定义为准。
+```
+
+> **注意：** 当前 CLIProxyAPI 中各函数的同 ID 模型定义基本一致，
+> 此规则主要用于处理未来可能出现的差异情况。
