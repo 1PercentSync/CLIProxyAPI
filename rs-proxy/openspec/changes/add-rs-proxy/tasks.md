@@ -31,43 +31,54 @@
 ## 3. 模型注册表
 
 - [x] 3.1 定义 Rust 数据结构（models/registry.rs）
-  - `ThinkingSupport` 结构体（min, max, zero_allowed, dynamic_allowed, levels）
+  - `ThinkingSupport` 结构体（min, max, zero_allowed, dynamic_allowed, auto_budget, levels）
   - `ModelInfo` 结构体（id, max_completion_tokens, thinking）
 - [x] 3.2 对照 CLIProxyAPI 的 `internal/registry/model_definitions.go` 编写模型定义
   - Claude 模型（claude-sonnet-4-5, claude-opus-4-5, 等）
   - Gemini 模型（gemini-2.5-pro, gemini-3-pro-preview, 等）
   - OpenAI 模型（gpt-5, gpt-5.1, gpt-5.2, 等）
-  - iFlow 模型（glm-4.6, glm-4.7, minimax-m2.1）
+  - 跨协议模型（gemini-claude-sonnet-4-5-thinking, gemini-claude-opus-4-5-thinking）
 - [x] 3.3 实现模型查找函数
   - `get_model_info(id: &str) -> Option<&ModelInfo>`
   - `model_supports_thinking(id: &str) -> bool`
 
 ## 4. 思考配置
 
-- [ ] 4.1 实现模型后缀解析器（thinking/parser.rs）
+- [x] 4.1 实现模型后缀解析器（thinking/parser.rs）
   - 解析 `model(value)` 模式
   - 检测数值与字符串值
-- [ ] 4.2 实现努力等级到预算的映射（thinking/models.rs）
+  - 实现 `to_intent()` 将 `ThinkingValue` 转换为 `ThinkingIntent`
+- [x] 4.2 实现努力等级到预算的映射（thinking/models.rs）
   - none→0, auto→-1, minimal→512, low→1024, medium→8192, high→24576, xhigh→32768
-- [ ] 4.3 实现思考注入器（thinking/injector.rs）
-  - 协议特定的注入逻辑
+  - `clamp_budget()` 支持 `auto_budget` 参数
+  - `clamp_effort_to_levels()` 支持等级钳制
+- [x] 4.3 实现意图类型定义（thinking/mod.rs）
+  - `ThinkingIntent` 枚举（Disabled, Dynamic, Fixed）
+  - `FixedThinking` 枚举（Level, Budget）
+  - `ThinkingConfig` 枚举（Budget, Effort, Disabled）
+- [x] 4.4 实现思考注入器（thinking/injector.rs）
+  - 意图分流架构（Disabled/Dynamic/Fixed 三路处理）
+  - `resolve_intent_to_config()` 协议适配
+  - 原生 Gemini 模型白名单（`NATIVE_GEMINI_PREFIXES`）
+  - `is_native_gemini_model()` 检测函数
 
 ## 5. 协议处理器
 
-- [ ] 5.1 实现 OpenAI 处理器（protocol/openai.rs）
+- [x] 5.1 实现 OpenAI 处理器（protocol/openai.rs）
   - `/v1/chat/completions`、`/v1/responses`
   - 设置 `reasoning_effort` 字段（仅等级，非数值）
-- [ ] 5.2 实现 Anthropic 处理器（protocol/anthropic.rs）
+- [x] 5.2 实现 Anthropic 处理器（protocol/anthropic.rs）
   - `/v1/messages`
   - 设置 `thinking.type` + `thinking.budget_tokens`
-- [ ] 5.3 实现 Gemini 处理器（protocol/gemini.rs）
+  - 支持 `ThinkingConfig::Disabled` 注入 `type: "disabled"`
+- [x] 5.3 实现 Gemini 处理器（protocol/gemini.rs）
   - `/v1beta/models/*`
-  - Gemini 2.5: 设置 `thinkingBudget`
-  - Gemini 3: 设置 `thinkingLevel`
+  - Gemini 2.5: 设置 `thinkingBudget`（snake_case `include_thoughts`）
+  - Gemini 3: 设置 `thinkingLevel`（camelCase `includeThoughts`）
 
 ## 6. 协议检测与模型列表增强
 
-- [ ] 6.1 实现协议检测（protocol/mod.rs）
+- [x] 6.1 实现协议检测（protocol/mod.rs）
   - 基于路径检测：
     - `/v1/chat/completions`、`/v1/responses` → OpenAI
     - `/v1/messages` → Anthropic
@@ -85,7 +96,11 @@
 
 ## 8. 测试与完善
 
-- [ ] 8.1 使用 tracing 添加结构化日志
-- [ ] 8.2 优雅处理错误情况
-- [ ] 8.3 使用真实 API 调用进行测试
-
+- [x] 8.1 实现单元测试（248 个测试通过）
+  - parser 测试（解析、to_intent）
+  - models 测试（映射、钳制）
+  - injector 测试（注入流程、跨协议模型）
+  - protocol 测试（Anthropic、Gemini、OpenAI）
+- [ ] 8.2 使用 tracing 添加结构化日志
+- [ ] 8.3 优雅处理错误情况
+- [ ] 8.4 使用真实 API 调用进行测试
