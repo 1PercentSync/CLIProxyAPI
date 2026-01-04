@@ -88,18 +88,18 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(auto)` | `level_to_budget("auto")` → -1 → `clamp_budget(-1, ..., auto_budget=16384)` → 16384 | `budget_tokens: 16384` |
-| `(minimal)` | `level_to_budget("minimal")` → 512 → `clamp_budget(512, ...)` → 1024 | `budget_tokens: 1024` |
-| `(low)` | `level_to_budget("low")` → 1024 → `clamp_budget` → 1024 | `budget_tokens: 1024` |
-| `(medium)` | `level_to_budget("medium")` → 8192 → 8192 | `budget_tokens: 8192` |
-| `(high)` | `level_to_budget("high")` → 24576 → 24576 | `budget_tokens: 24576` |
-| `(xhigh)` | `level_to_budget("xhigh")` → 32768 → 32768 | `budget_tokens: 32768` |
-| `(0)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(-1)` | `clamp_budget(-1, ..., auto_budget=16384)` → 16384 | `budget_tokens: 16384` |
-| `(500)` | `clamp_budget(500, ...)` → 1024 | `budget_tokens: 1024` |
-| `(1024~100000)` | 直接使用 | `budget_tokens: {输入值}` |
-| `(150000)` | `clamp_budget(150000, ...)` → 100000 | `budget_tokens: 100000` |
+| `(none)` | `to_intent()` → `Disabled` → `Disabled` | `thinking: { type: "disabled" }` |
+| `(auto)` | `to_intent()` → `Dynamic` → `auto_budget(16384)` | `budget_tokens: 16384` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 512 → `clamp` → 1024 | `budget_tokens: 1024` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 1024 → `clamp` → 1024 | `budget_tokens: 1024` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 8192 | `budget_tokens: 8192` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 24576 | `budget_tokens: 24576` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 32768 | `budget_tokens: 32768` |
+| `(0)` | `to_intent()` → `Disabled` → `Disabled` | `thinking: { type: "disabled" }` |
+| `(-1)` | `to_intent()` → `Dynamic` → `auto_budget(16384)` | `budget_tokens: 16384` |
+| `(500)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 1024 | `budget_tokens: 1024` |
+| `(1024~100000)` | `to_intent()` → `Fixed(Budget)` → 直接使用 | `budget_tokens: {输入值}` |
+| `(150000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 100000 | `budget_tokens: 100000` |
 
 ### 1.2 Claude + OpenAI 协议（跨协议）
 
@@ -112,21 +112,21 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Disabled` | `reasoning_effort: "none"` |
-| `(auto)` | OpenAI 不支持 auto → 转换为 "medium" | `reasoning_effort: "medium"` |
-| `(minimal)` | 直接用 "minimal" | `reasoning_effort: "minimal"` |
-| `(low)` | 直接用 "low" | `reasoning_effort: "low"` |
-| `(medium)` | 直接用 "medium" | `reasoning_effort: "medium"` |
-| `(high)` | 直接用 "high" | `reasoning_effort: "high"` |
-| `(xhigh)` | 直接用 "xhigh" | `reasoning_effort: "xhigh"` |
-| `(0)` | → `ThinkingConfig::Disabled` | `reasoning_effort: "none"` |
-| `(-1)` | 透传 -1 → `budget_to_effort(-1)` → "auto" → OpenAI 不支持 → "medium" | `reasoning_effort: "medium"` |
-| `(500)` | `clamp_budget(500, ...)` → 1024 → `budget_to_effort(1024)` → "low" | `reasoning_effort: "low"` |
-| `(512)` | `clamp_budget(512, ...)` → 1024 → `budget_to_effort(1024)` → "low" | `reasoning_effort: "low"` |
-| `(8192)` | `clamp_budget(8192, ...)` → 8192 → `budget_to_effort(8192)` → "medium" | `reasoning_effort: "medium"` |
-| `(24576)` | → "high" | `reasoning_effort: "high"` |
-| `(32768)` | → "xhigh" | `reasoning_effort: "xhigh"` |
-| `(100000)` | `clamp_budget(100000, ...)` → 100000 → "xhigh" | `reasoning_effort: "xhigh"` |
+| `(none)` | `to_intent()` → `Disabled` → `Disabled` | `reasoning_effort: "none"` |
+| `(auto)` | `to_intent()` → `Dynamic` → `"medium"` | `reasoning_effort: "medium"` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → 直接使用 | `reasoning_effort: "minimal"` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → 直接使用 | `reasoning_effort: "low"` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → 直接使用 | `reasoning_effort: "medium"` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → 直接使用 | `reasoning_effort: "high"` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → 直接使用 | `reasoning_effort: "xhigh"` |
+| `(0)` | `to_intent()` → `Disabled` → `Disabled` | `reasoning_effort: "none"` |
+| `(-1)` | `to_intent()` → `Dynamic` → `"medium"` | `reasoning_effort: "medium"` |
+| `(500)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 1024 → `budget_to_effort` → "low" | `reasoning_effort: "low"` |
+| `(512)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 1024 → `budget_to_effort` → "low" | `reasoning_effort: "low"` |
+| `(8192)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 8192 → `budget_to_effort` → "medium" | `reasoning_effort: "medium"` |
+| `(24576)` | `to_intent()` → `Fixed(Budget)` → `budget_to_effort` → "high" | `reasoning_effort: "high"` |
+| `(32768)` | `to_intent()` → `Fixed(Budget)` → `budget_to_effort` → "xhigh" | `reasoning_effort: "xhigh"` |
+| `(100000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 100000 → `budget_to_effort` → "xhigh" | `reasoning_effort: "xhigh"` |
 
 ### 1.3 Claude + Gemini 协议（跨协议）
 
@@ -137,18 +137,18 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(0)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(auto)` | Gemini 协议特殊处理 → `ThinkingConfig::Budget(-1)` | `thinkingBudget: -1` |
-| `(minimal)` | `level_to_budget("minimal")` → 512 → `clamp_budget(512, ...)` → 1024 | `thinkingBudget: 1024` |
-| `(low)` | `level_to_budget("low")` → 1024 → `clamp_budget` → 1024 | `thinkingBudget: 1024` |
-| `(medium)` | `level_to_budget("medium")` → 8192 → 8192 | `thinkingBudget: 8192` |
-| `(high)` | `level_to_budget("high")` → 24576 → 24576 | `thinkingBudget: 24576` |
-| `(xhigh)` | `level_to_budget("xhigh")` → 32768 → 32768 | `thinkingBudget: 32768` |
-| `(-1)` | Gemini 协议支持动态思考 → 直接透传 | `thinkingBudget: -1` |
-| `(500)` | `clamp_budget(500, ...)` → 1024 | `thinkingBudget: 1024` |
-| `(1024~100000)` | 直接使用 | `thinkingBudget: {输入值}` |
-| `(150000)` | `clamp_budget(150000, ...)` → 100000 | `thinkingBudget: 100000` |
+| `(none)` | `to_intent()` → `Disabled` → 跨协议 → `Budget(0)` | `thinkingBudget: 0` |
+| `(0)` | `to_intent()` → `Disabled` → 跨协议 → `Budget(0)` | `thinkingBudget: 0` |
+| `(auto)` | `to_intent()` → `Dynamic` → `Budget(-1)` | `thinkingBudget: -1` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 512 → `clamp` → 1024 | `thinkingBudget: 1024` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 1024 → `clamp` → 1024 | `thinkingBudget: 1024` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 8192 | `thinkingBudget: 8192` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 24576 | `thinkingBudget: 24576` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 32768 | `thinkingBudget: 32768` |
+| `(-1)` | `to_intent()` → `Dynamic` → `Budget(-1)` | `thinkingBudget: -1` |
+| `(500)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 1024 | `thinkingBudget: 1024` |
+| `(1024~100000)` | `to_intent()` → `Fixed(Budget)` → 直接使用 | `thinkingBudget: {输入值}` |
+| `(150000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 100000 | `thinkingBudget: 100000` |
 
 ---
 
@@ -166,18 +166,18 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | `level_to_budget("none")` → 0 → `clamp_budget(0, 128, ...)` → 128 | `thinkingBudget: 128` |
-| `(0)` | `clamp_budget(0, 128, ...)` → 128 | `thinkingBudget: 128` |
-| `(auto)` | → -1（dynamic_allowed=true） | `thinkingBudget: -1` |
-| `(minimal)` | → 512 → 512 | `thinkingBudget: 512` |
-| `(low)` | → 1024 → 1024 | `thinkingBudget: 1024` |
-| `(medium)` | → 8192 → 8192 | `thinkingBudget: 8192` |
-| `(high)` | → 24576 → 24576 | `thinkingBudget: 24576` |
-| `(xhigh)` | → 32768 → 32768 | `thinkingBudget: 32768` |
-| `(-1)` | -1（dynamic_allowed=true） | `thinkingBudget: -1` |
-| `(50)` | `clamp_budget(50, ...)` → 128 | `thinkingBudget: 128` |
-| `(128~32768)` | 直接使用 | `thinkingBudget: {输入值}` |
-| `(50000)` | `clamp_budget(50000, ...)` → 32768 | `thinkingBudget: 32768` |
+| `(none)` | `to_intent()` → `Disabled` → 原生 Gemini 2.5 → `clamp` → 128 | `thinkingBudget: 128` |
+| `(0)` | `to_intent()` → `Disabled` → 原生 Gemini 2.5 → `clamp` → 128 | `thinkingBudget: 128` |
+| `(auto)` | `to_intent()` → `Dynamic` → `Budget(-1)` | `thinkingBudget: -1` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 512 | `thinkingBudget: 512` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 1024 | `thinkingBudget: 1024` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 8192 | `thinkingBudget: 8192` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 24576 | `thinkingBudget: 24576` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 32768 | `thinkingBudget: 32768` |
+| `(-1)` | `to_intent()` → `Dynamic` → `Budget(-1)` | `thinkingBudget: -1` |
+| `(50)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 128 | `thinkingBudget: 128` |
+| `(128~32768)` | `to_intent()` → `Fixed(Budget)` → 直接使用 | `thinkingBudget: {输入值}` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 32768 | `thinkingBudget: 32768` |
 
 ### 2.2 Gemini 2.5 + OpenAI 协议（跨协议）
 
@@ -189,21 +189,21 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Disabled` | `reasoning_effort: "none"` |
-| `(auto)` | OpenAI 不支持 auto → 转换为 "medium" | `reasoning_effort: "medium"` |
-| `(minimal)` | 直接用 "minimal" | `reasoning_effort: "minimal"` |
-| `(low)` | 直接用 "low" | `reasoning_effort: "low"` |
-| `(medium)` | 直接用 "medium" | `reasoning_effort: "medium"` |
-| `(high)` | 直接用 "high" | `reasoning_effort: "high"` |
-| `(xhigh)` | 直接用 "xhigh" | `reasoning_effort: "xhigh"` |
-| `(0)` | → `ThinkingConfig::Disabled` | `reasoning_effort: "none"` |
-| `(-1)` | 透传 -1 → `budget_to_effort(-1)` → "auto" → OpenAI 不支持 → "medium" | `reasoning_effort: "medium"` |
-| `(50)` | `clamp_budget(50, ...)` → 128 → `budget_to_effort(128)` → "minimal" | `reasoning_effort: "minimal"` |
-| `(512)` | `clamp_budget(512, ...)` → 512 → `budget_to_effort(512)` → "minimal" | `reasoning_effort: "minimal"` |
-| `(8192)` | `clamp_budget(8192, ...)` → 8192 → `budget_to_effort(8192)` → "medium" | `reasoning_effort: "medium"` |
-| `(24576)` | `clamp_budget(24576, ...)` → 24576 → "high" | `reasoning_effort: "high"` |
-| `(32768)` | `clamp_budget(32768, ...)` → 32768 → "xhigh" | `reasoning_effort: "xhigh"` |
-| `(50000)` | `clamp_budget(50000, ...)` → 32768 → "xhigh" | `reasoning_effort: "xhigh"` |
+| `(none)` | `to_intent()` → `Disabled` → `Disabled` | `reasoning_effort: "none"` |
+| `(auto)` | `to_intent()` → `Dynamic` → `"medium"` | `reasoning_effort: "medium"` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → 直接使用 | `reasoning_effort: "minimal"` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → 直接使用 | `reasoning_effort: "low"` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → 直接使用 | `reasoning_effort: "medium"` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → 直接使用 | `reasoning_effort: "high"` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → 直接使用 | `reasoning_effort: "xhigh"` |
+| `(0)` | `to_intent()` → `Disabled` → `Disabled` | `reasoning_effort: "none"` |
+| `(-1)` | `to_intent()` → `Dynamic` → `"medium"` | `reasoning_effort: "medium"` |
+| `(50)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 128 → `budget_to_effort` → "minimal" | `reasoning_effort: "minimal"` |
+| `(512)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 512 → `budget_to_effort` → "minimal" | `reasoning_effort: "minimal"` |
+| `(8192)` | `to_intent()` → `Fixed(Budget)` → `budget_to_effort` → "medium" | `reasoning_effort: "medium"` |
+| `(24576)` | `to_intent()` → `Fixed(Budget)` → `budget_to_effort` → "high" | `reasoning_effort: "high"` |
+| `(32768)` | `to_intent()` → `Fixed(Budget)` → `budget_to_effort` → "xhigh" | `reasoning_effort: "xhigh"` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 32768 → `budget_to_effort` → "xhigh" | `reasoning_effort: "xhigh"` |
 
 ### 2.3 Gemini 2.5 + Anthropic 协议（跨协议）
 
@@ -214,18 +214,18 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(auto)` | `level_to_budget("auto")` → -1 → Anthropic 不支持 → `(128+32768)/2` → 16448 | `budget_tokens: 16448` |
-| `(minimal)` | `level_to_budget("minimal")` → 512 → 512 | `budget_tokens: 512` |
-| `(low)` | `level_to_budget("low")` → 1024 → 1024 | `budget_tokens: 1024` |
-| `(medium)` | `level_to_budget("medium")` → 8192 → 8192 | `budget_tokens: 8192` |
-| `(high)` | `level_to_budget("high")` → 24576 → 24576 | `budget_tokens: 24576` |
-| `(xhigh)` | `level_to_budget("xhigh")` → 32768 → 32768 | `budget_tokens: 32768` |
-| `(0)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(-1)` | Anthropic 不支持 → `(128+32768)/2` → 16448 | `budget_tokens: 16448` |
-| `(50)` | `clamp_budget(50, ...)` → 128 | `budget_tokens: 128` |
-| `(128~32768)` | 直接使用 | `budget_tokens: {输入值}` |
-| `(50000)` | `clamp_budget(50000, ...)` → 32768 | `budget_tokens: 32768` |
+| `(none)` | `to_intent()` → `Disabled` → `Disabled` | `thinking: { type: "disabled" }` |
+| `(auto)` | `to_intent()` → `Dynamic` → `(min+max)/2` → 16448 | `budget_tokens: 16448` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 512 | `budget_tokens: 512` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 1024 | `budget_tokens: 1024` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 8192 | `budget_tokens: 8192` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 24576 | `budget_tokens: 24576` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 32768 | `budget_tokens: 32768` |
+| `(0)` | `to_intent()` → `Disabled` → `Disabled` | `thinking: { type: "disabled" }` |
+| `(-1)` | `to_intent()` → `Dynamic` → `(min+max)/2` → 16448 | `budget_tokens: 16448` |
+| `(50)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 128 | `budget_tokens: 128` |
+| `(128~32768)` | `to_intent()` → `Fixed(Budget)` → 直接使用 | `budget_tokens: {输入值}` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 32768 | `budget_tokens: 32768` |
 
 ---
 
@@ -248,17 +248,17 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | `clamp_effort_to_levels("none", levels)` → "none" | `reasoning_effort: "none"` |
-| `(auto)` | `clamp_effort_to_levels("auto", levels)` → levels 无 auto → 回退到 "medium" | `reasoning_effort: "medium"` |
-| `(minimal)` | `clamp_effort_to_levels("minimal", levels)` → 不在列表 → 向上 clamp → "low" | `reasoning_effort: "low"` |
-| `(low)` | → "low" | `reasoning_effort: "low"` |
-| `(medium)` | → "medium" | `reasoning_effort: "medium"` |
-| `(high)` | → "high" | `reasoning_effort: "high"` |
-| `(xhigh)` | `clamp_effort_to_levels("xhigh", levels)` → 向上无更高 → 返回最高 "high" | `reasoning_effort: "high"` |
-| `(0)` | 无预算范围不 clamp → `budget_to_effort(0)` → "none" → clamp → "none" | `reasoning_effort: "none"` |
-| `(-1)` | 无预算范围不 clamp → `budget_to_effort(-1)` → "auto" → OpenAI 不支持 → "medium" | `reasoning_effort: "medium"` |
-| `(8192)` | `budget_to_effort(8192)` → "medium" → clamp → "medium" | `reasoning_effort: "medium"` |
-| `(50000)` | `budget_to_effort(50000)` → "xhigh" → clamp → "high" | `reasoning_effort: "high"` |
+| `(none)` | `to_intent()` → `Disabled` → `Disabled` | `reasoning_effort: "none"` |
+| `(auto)` | `to_intent()` → `Dynamic` → `"medium"` → `clamp` → "medium" | `reasoning_effort: "medium"` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `clamp` → "low" | `reasoning_effort: "low"` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → "low" | `reasoning_effort: "low"` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → "medium" | `reasoning_effort: "medium"` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → "high" | `reasoning_effort: "high"` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `clamp` → "high" | `reasoning_effort: "high"` |
+| `(0)` | `to_intent()` → `Disabled` → `Disabled` | `reasoning_effort: "none"` |
+| `(-1)` | `to_intent()` → `Dynamic` → `"medium"` → `clamp` → "medium" | `reasoning_effort: "medium"` |
+| `(8192)` | `to_intent()` → `Fixed(Budget)` → `budget_to_effort` → "medium" → `clamp` | `reasoning_effort: "medium"` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → `budget_to_effort` → "xhigh" → `clamp` → "high" | `reasoning_effort: "high"` |
 
 ### 3.2 OpenAI + Anthropic 协议（跨协议）
 
@@ -270,17 +270,17 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(auto)` | `level_to_budget("auto")` → -1 → Anthropic 不支持 → `auto_budget` 或 `level_to_budget("medium")` | `budget_tokens: 8192` |
-| `(minimal)` | `level_to_budget("minimal")` → 512 | `budget_tokens: 512` |
-| `(low)` | `level_to_budget("low")` → 1024 | `budget_tokens: 1024` |
-| `(medium)` | `level_to_budget("medium")` → 8192 | `budget_tokens: 8192` |
-| `(high)` | `level_to_budget("high")` → 24576 | `budget_tokens: 24576` |
-| `(xhigh)` | `level_to_budget("xhigh")` → 32768 | `budget_tokens: 32768` |
-| `(0)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(-1)` | Anthropic 不支持 → `auto_budget` 或 `level_to_budget("medium")` | `budget_tokens: 8192` |
-| `(8192)` | 直接使用（无 range 不 clamp） | `budget_tokens: 8192` |
-| `(50000)` | 直接使用（无 range 不 clamp） | `budget_tokens: 50000` |
+| `(none)` | `to_intent()` → `Disabled` → `Disabled` | `thinking: { type: "disabled" }` |
+| `(auto)` | `to_intent()` → `Dynamic` → `DEFAULT_MEDIUM_BUDGET` → 8192 | `budget_tokens: 8192` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 512 | `budget_tokens: 512` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 1024 | `budget_tokens: 1024` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 8192 | `budget_tokens: 8192` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 24576 | `budget_tokens: 24576` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 32768 | `budget_tokens: 32768` |
+| `(0)` | `to_intent()` → `Disabled` → `Disabled` | `thinking: { type: "disabled" }` |
+| `(-1)` | `to_intent()` → `Dynamic` → `DEFAULT_MEDIUM_BUDGET` → 8192 | `budget_tokens: 8192` |
+| `(8192)` | `to_intent()` → `Fixed(Budget)` → 无 range 不 clamp | `budget_tokens: 8192` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → 无 range 不 clamp | `budget_tokens: 50000` |
 
 ### 3.3 OpenAI + Gemini 协议（跨协议）
 
@@ -294,17 +294,17 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(0)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(auto)` | Gemini 协议特殊处理 → `ThinkingConfig::Budget(-1)` | `thinkingBudget: -1` |
-| `(minimal)` | `clamp_effort_to_levels("minimal", levels)` → 向上 clamp → "low" | `thinkingLevel: "low"` |
-| `(low)` | → "low" | `thinkingLevel: "low"` |
-| `(medium)` | → "medium" | `thinkingLevel: "medium"` |
-| `(high)` | → "high" | `thinkingLevel: "high"` |
-| `(xhigh)` | `clamp_effort_to_levels("xhigh", levels)` → 向上无更高 → 返回最高 "high" | `thinkingLevel: "high"` |
-| `(-1)` | 数值后缀 → 直接使用 | `thinkingBudget: -1` |
-| `(8192)` | 数值后缀 → 直接使用 | `thinkingBudget: 8192` |
-| `(50000)` | 数值后缀 → 直接使用 | `thinkingBudget: 50000` |
+| `(none)` | `to_intent()` → `Disabled` → `Budget(0)` | `thinkingBudget: 0` |
+| `(0)` | `to_intent()` → `Disabled` → `Budget(0)` | `thinkingBudget: 0` |
+| `(auto)` | `to_intent()` → `Dynamic` → `Budget(-1)` | `thinkingBudget: -1` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `clamp` → "low" | `thinkingLevel: "low"` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → "low" | `thinkingLevel: "low"` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → "medium" | `thinkingLevel: "medium"` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → "high" | `thinkingLevel: "high"` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `clamp` → "high" | `thinkingLevel: "high"` |
+| `(-1)` | `to_intent()` → `Dynamic` → `Budget(-1)` | `thinkingBudget: -1` |
+| `(8192)` | `to_intent()` → `Fixed(Budget)` → 无 range 不 clamp | `thinkingBudget: 8192` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → 无 range 不 clamp | `thinkingBudget: 50000` |
 
 ---
 
@@ -326,21 +326,21 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(0)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(auto)` | Gemini 协议特殊处理 → `ThinkingConfig::Budget(-1)` | `thinkingBudget: -1` |
-| `(minimal)` | → 向上 clamp → "low" | `thinkingLevel: "low"` |
-| `(low)` | → "low" | `thinkingLevel: "low"` |
-| `(medium)` | → 不在列表 → 向上 clamp → "high" | `thinkingLevel: "high"` |
-| `(high)` | → "high" | `thinkingLevel: "high"` |
-| `(xhigh)` | → 向上无更高 → 返回最高 "high" | `thinkingLevel: "high"` |
-| `(-1)` | 数值后缀 → -1（dynamic_allowed=true） | `thinkingBudget: -1` |
-| `(50)` | 数值后缀 → `clamp_budget(50, ...)` → 128 | `thinkingBudget: 128` |
-| `(500)` | 数值后缀 → 500 | `thinkingBudget: 500` |
-| `(1024)` | 数值后缀 → 1024 | `thinkingBudget: 1024` |
-| `(8192)` | 数值后缀 → 8192 | `thinkingBudget: 8192` |
-| `(24576)` | 数值后缀 → 24576 | `thinkingBudget: 24576` |
-| `(50000)` | 数值后缀 → `clamp_budget(50000, ...)` → 32768 | `thinkingBudget: 32768` |
+| `(none)` | `to_intent()` → `Disabled` → `Budget(0)` | `thinkingBudget: 0` |
+| `(0)` | `to_intent()` → `Disabled` → `Budget(0)` | `thinkingBudget: 0` |
+| `(auto)` | `to_intent()` → `Dynamic` → `Budget(-1)` | `thinkingBudget: -1` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `clamp` → "low" | `thinkingLevel: "low"` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → "low" | `thinkingLevel: "low"` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → `clamp` → "high" | `thinkingLevel: "high"` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → "high" | `thinkingLevel: "high"` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `clamp` → "high" | `thinkingLevel: "high"` |
+| `(-1)` | `to_intent()` → `Dynamic` → `Budget(-1)` | `thinkingBudget: -1` |
+| `(50)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 128 | `thinkingBudget: 128` |
+| `(500)` | `to_intent()` → `Fixed(Budget)` → 500 | `thinkingBudget: 500` |
+| `(1024)` | `to_intent()` → `Fixed(Budget)` → 1024 | `thinkingBudget: 1024` |
+| `(8192)` | `to_intent()` → `Fixed(Budget)` → 8192 | `thinkingBudget: 8192` |
+| `(24576)` | `to_intent()` → `Fixed(Budget)` → 24576 | `thinkingBudget: 24576` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 32768 | `thinkingBudget: 32768` |
 
 ### 4.2 Gemini 3 + OpenAI 协议（跨协议）
 
@@ -354,18 +354,18 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Disabled` | `reasoning_effort: "none"` |
-| `(auto)` | levels 无 auto → 回退到 "medium" → clamp → "high" | `reasoning_effort: "high"` |
-| `(minimal)` | → 向上 clamp → "low" | `reasoning_effort: "low"` |
-| `(low)` | → "low" | `reasoning_effort: "low"` |
-| `(medium)` | → clamp → "high" | `reasoning_effort: "high"` |
-| `(high)` | → "high" | `reasoning_effort: "high"` |
-| `(xhigh)` | → 向上无更高 → 返回最高 "high" | `reasoning_effort: "high"` |
-| `(0)` | → `ThinkingConfig::Disabled` | `reasoning_effort: "none"` |
-| `(-1)` | `budget_to_effort(-1)` → "auto" → levels 无 auto → 回退 "medium" → clamp → "high" | `reasoning_effort: "high"` |
-| `(500)` | `clamp_budget(500, ...)` → 500 → `budget_to_effort(500)` → "minimal" → clamp → "low" | `reasoning_effort: "low"` |
-| `(8192)` | `clamp_budget(8192, ...)` → 8192 → `budget_to_effort(8192)` → "medium" → clamp → "high" | `reasoning_effort: "high"` |
-| `(50000)` | `clamp_budget(50000, ...)` → 32768 → `budget_to_effort(32768)` → "xhigh" → clamp → "high" | `reasoning_effort: "high"` |
+| `(none)` | `to_intent()` → `Disabled` → `Disabled` | `reasoning_effort: "none"` |
+| `(auto)` | `to_intent()` → `Dynamic` → `"medium"` → `clamp` → "high" | `reasoning_effort: "high"` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `clamp` → "low" | `reasoning_effort: "low"` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → "low" | `reasoning_effort: "low"` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → `clamp` → "high" | `reasoning_effort: "high"` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → "high" | `reasoning_effort: "high"` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `clamp` → "high" | `reasoning_effort: "high"` |
+| `(0)` | `to_intent()` → `Disabled` → `Disabled` | `reasoning_effort: "none"` |
+| `(-1)` | `to_intent()` → `Dynamic` → `"medium"` → `clamp` → "high" | `reasoning_effort: "high"` |
+| `(500)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 500 → `budget_to_effort` → "minimal" → `clamp` → "low" | `reasoning_effort: "low"` |
+| `(8192)` | `to_intent()` → `Fixed(Budget)` → `budget_to_effort` → "medium" → `clamp` → "high" | `reasoning_effort: "high"` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 32768 → `budget_to_effort` → "xhigh" → `clamp` → "high" | `reasoning_effort: "high"` |
 
 ### 4.3 Gemini 3 + Anthropic 协议（跨协议）
 
@@ -376,18 +376,18 @@
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(auto)` | `level_to_budget("auto")` → -1 → Anthropic 不支持 → `(128+32768)/2` → 16448 | `budget_tokens: 16448` |
-| `(minimal)` | `level_to_budget("minimal")` → 512 → `clamp_budget(512, 128, 32768, ...)` → 512 | `budget_tokens: 512` |
-| `(low)` | `level_to_budget("low")` → 1024 → 1024 | `budget_tokens: 1024` |
-| `(medium)` | `level_to_budget("medium")` → 8192 → 8192 | `budget_tokens: 8192` |
-| `(high)` | `level_to_budget("high")` → 24576 → 24576 | `budget_tokens: 24576` |
-| `(xhigh)` | `level_to_budget("xhigh")` → 32768 → 32768 | `budget_tokens: 32768` |
-| `(0)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(-1)` | Anthropic 不支持 → `(128+32768)/2` → 16448 | `budget_tokens: 16448` |
-| `(50)` | `clamp_budget(50, ...)` → 128 | `budget_tokens: 128` |
-| `(128~32768)` | 直接使用 | `budget_tokens: {输入值}` |
-| `(50000)` | `clamp_budget(50000, ...)` → 32768 | `budget_tokens: 32768` |
+| `(none)` | `to_intent()` → `Disabled` → `Disabled` | `thinking: { type: "disabled" }` |
+| `(auto)` | `to_intent()` → `Dynamic` → `(min+max)/2` → 16448 | `budget_tokens: 16448` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 512 → `clamp` → 512 | `budget_tokens: 512` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 1024 | `budget_tokens: 1024` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 8192 | `budget_tokens: 8192` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 24576 | `budget_tokens: 24576` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 32768 | `budget_tokens: 32768` |
+| `(0)` | `to_intent()` → `Disabled` → `Disabled` | `thinking: { type: "disabled" }` |
+| `(-1)` | `to_intent()` → `Dynamic` → `(min+max)/2` → 16448 | `budget_tokens: 16448` |
+| `(50)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 128 | `budget_tokens: 128` |
+| `(128~32768)` | `to_intent()` → `Fixed(Budget)` → 直接使用 | `budget_tokens: {输入值}` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 32768 | `budget_tokens: 32768` |
 
 ---
 
@@ -396,57 +396,120 @@
 ```
 用户请求: model(suffix) + 请求协议
 
-1. 解析后缀
+1. 解析后缀 (parse_model_suffix)
    ├─ 等级后缀 (high, low, ...) → ThinkingValue::Level
    └─ 数值后缀 (16384, ...) → ThinkingValue::Budget
 
-2. 查询模型信息
+2. 转换为意图 (to_intent)
+   ├─ None (无后缀) → 直接透传
+   ├─ (none) 或 (0) → ThinkingIntent::Disabled
+   ├─ (auto) 或 (-1) → ThinkingIntent::Dynamic
+   └─ 其他 → ThinkingIntent::Fixed(Level/Budget)
+
+3. 查询模型信息
    ├─ 未知模型 + 有后缀 → 返回 400 错误
    ├─ 已知模型 + 无思考支持 → 去除后缀，透传
    └─ 已知模型 + 有思考支持 → 继续处理
 
-3. 禁用思考检查（协议差异处理）
-   ├─ OpenAI/Anthropic 协议:
-   │   ├─ level == "none" → ThinkingConfig::Disabled
-   │   └─ budget == 0 → ThinkingConfig::Disabled
-   └─ Gemini 协议:
-       ├─ level == "none" → ThinkingConfig::Budget(0)
-       ├─ level == "auto" → ThinkingConfig::Budget(-1)
-       └─ budget == 0 → ThinkingConfig::Budget(0)
+4. 解析意图到配置 (resolve_intent_to_config)
+   ├─ Disabled 意图:
+   │   ├─ OpenAI/Anthropic → ThinkingConfig::Disabled
+   │   └─ Gemini:
+   │       ├─ 有 levels (Gemini 3) → Budget(0)
+   │       ├─ 原生 Gemini 2.5 → clamp 到 min
+   │       └─ 跨协议模型 → Budget(0)
+   ├─ Dynamic 意图:
+   │   ├─ Anthropic → auto_budget 或 (min+max)/2
+   │   ├─ OpenAI → "medium" (+ clamp if has levels)
+   │   └─ Gemini → Budget(-1)
+   └─ Fixed 意图:
+       ├─ Fixed(Level): 用户输入等级后缀，如 (high)、(medium)
+       │   ├─ 验证: level_to_budget(level) → 无效则返回 400 错误
+       │   │
+       │   ├─ 情况 A: needs_effort = true
+       │   │   触发条件: OpenAI 协议（始终）或 Gemini 协议 + 有 levels 的模型
+       │   │   目标: 返回 Effort(等级字符串)
+       │   │   │
+       │   │   ├─ 模型有 levels 配置?
+       │   │   │   ├─ 是 → clamp_effort_to_levels(level, levels)
+       │   │   │   │       例: gpt-5.1(xhigh)，模型只支持 ["none","low","medium","high"]
+       │   │   │   │           → clamp 到 "high"
+       │   │   │   └─ 否 → 直接使用用户输入的 level（不 clamp）
+       │   │   │           例: claude-sonnet-4-5(high) + OpenAI 协议
+       │   │   │               → Claude 无 levels，直接用 "high"
+       │   │   └─ 返回 Effort(level)
+       │   │
+       │   └─ 情况 B: needs_effort = false (needs_budget)
+       │       触发条件: Anthropic 协议（始终）或 Gemini 协议 + 无 levels 的模型
+       │       目标: 返回 Budget(数值)
+       │       │
+       │       ├─ level_to_budget(level) → 转换为数值
+       │       │   例: "high" → 24576, "minimal" → 512
+       │       │
+       │       ├─ 模型有预算范围 (max > 0)?
+       │       │   ├─ 是 → clamp_budget(budget, min, max, ...)
+       │       │   │       例: gemini-2.5-pro(minimal)=512，模型 min=128
+       │       │   │           → 512 在范围内，不变
+       │       │   │       例: claude-sonnet-4-5(minimal)=512，模型 min=1024
+       │       │   │           → clamp 到 1024
+       │       │   └─ 否 → 直接使用 budget（无需 clamp）
+       │       │           例: gpt-5.1(high) + Anthropic 协议
+       │       │               → OpenAI 模型无预算范围 (max=0)，直接用 24576
+       │       └─ 返回 Budget(budget)
+       └─ Fixed(Budget): 用户输入数值后缀，如 (8192)、(16384)
+           │
+           ├─ Gemini 协议:
+           │   触发条件: 请求使用 Gemini 协议
+           │   目标: 返回 Budget(数值)，尊重用户的数值输入
+           │   │
+           │   ├─ 模型有预算范围 (max > 0)?
+           │   │   ├─ 是 → clamp_budget(budget, min, max, ...)
+           │   │   │       例: gemini-2.5-pro(50000)，max=32768
+           │   │   │           → clamp 到 32768
+           │   │   └─ 否 → 直接使用 budget（无需 clamp）
+           │   │           例: gpt-5.1(8192) + Gemini 协议
+           │   │               → OpenAI 模型无预算范围，直接用 8192
+           │   └─ 返回 Budget(budget)
+           │
+           ├─ OpenAI 协议:
+           │   触发条件: 请求使用 OpenAI 协议
+           │   目标: 返回 Effort(等级字符串)，需要将数值转换为等级
+           │   │
+           │   ├─ 模型有预算范围 (max > 0)?
+           │   │   ├─ 是 → clamp_budget(budget, min, max, ...)
+           │   │   │       例: claude-sonnet-4-5(500) + OpenAI 协议
+           │   │   │           → clamp 到 1024
+           │   │   └─ 否 → 直接使用 budget
+           │   │
+           │   ├─ budget_to_effort(budget) → 转换为等级
+           │   │   例: 8192 → "medium", 24576 → "high", 50000 → "xhigh"
+           │   │
+           │   ├─ 模型有 levels 配置?
+           │   │   ├─ 是 → clamp_effort_to_levels(effort, levels)
+           │   │   │       例: gpt-5.1(50000) → "xhigh" → 模型只支持到 "high"
+           │   │   │           → clamp 到 "high"
+           │   │   └─ 否 → 直接使用 effort
+           │   │           例: claude-sonnet-4-5(8192) + OpenAI 协议
+           │   │               → "medium"，Claude 无 levels，直接用
+           │   └─ 返回 Effort(effort)
+           │
+           └─ Anthropic 协议:
+               触发条件: 请求使用 Anthropic 协议
+               目标: 返回 Budget(数值)
+               │
+               ├─ 模型有预算范围 (max > 0)?
+               │   ├─ 是 → clamp_budget(budget, min, max, ...)
+               │   │       例: gemini-2.5-pro(50000) + Anthropic 协议
+               │   │           → clamp 到 32768
+               │   │       例: claude-sonnet-4-5(500) + Anthropic 协议
+               │   │           → clamp 到 1024
+               │   └─ 否 → 直接使用 budget（无需 clamp）
+               │           例: gpt-5.1(50000) + Anthropic 协议
+               │               → OpenAI 模型无预算范围，直接用 50000
+               └─ 返回 Budget(budget)
 
-4. 确定协议需求
-   ├─ OpenAI 协议 → needs_effort = true
-   ├─ Anthropic 协议 → needs_effort = false
-   └─ Gemini 协议 → needs_effort = 模型有 levels（仅对等级后缀生效）
-
-5. 确定是否有预算范围
-   └─ has_budget_range = thinking.max > 0
-
-6. 转换和钳制
-   ├─ 等级输入 + needs_effort:
-   │   ├─ 有 levels → clamp_effort_to_levels → Effort
-   │   └─ 无 levels → 直接使用 → Effort
-   ├─ 等级输入 + needs_budget:
-   │   ├─ level_to_budget → budget
-   │   ├─ has_range → clamp_budget → Budget
-   │   └─ 无 range → 直接使用 → Budget
-   ├─ 数值输入 + Gemini 协议:
-   │   └─ clamp_budget（如有 range）→ Budget（尊重用户意图）
-   ├─ 数值输入 + OpenAI 协议:
-   │   ├─ has_range → clamp_budget → clamped
-   │   ├─ budget_to_effort(clamped) → effort
-   │   ├─ 有 levels → clamp_effort_to_levels → Effort
-   │   └─ 无 levels → 直接使用 → Effort
-   └─ 数值输入 + Anthropic 协议:
-       ├─ has_range → clamp_budget → Budget
-       └─ 无 range → 直接使用 → Budget
-
-7. OpenAI 协议 auto 转换（needs_effort=true 时）
-   └─ 如果最终 effort == "auto" → 转换为 "medium"
-   （无论是等级后缀 (auto) 还是数值后缀 (-1)，无论模型是否支持 auto）
-
-8. 注入到请求体
-   ├─ Disabled (仅 OpenAI/Anthropic):
+5. 注入到请求体 (inject_{openai,anthropic,gemini})
+   ├─ Disabled:
    │   ├─ Anthropic → thinking: { type: "disabled" }
    │   └─ OpenAI → reasoning_effort: "none"
    ├─ Effort → reasoning_effort / thinkingLevel
@@ -457,12 +520,12 @@
 
 ## 特殊值处理
 
-| 值 | 含义 | 处理规则 |
-|----|------|----------|
-| 0 | 禁用思考 | OpenAI/Anthropic → `Disabled`；Gemini → `Budget(0)` |
-| -1 | 动态预算 | Anthropic 不支持 → 使用 `auto_budget` 或 `(min+max)/2`；Gemini → 依据 `dynamic_allowed`；OpenAI → 转为 "auto" → "medium" |
-| < min | 低于最小值 | clamp 到 min |
-| > max | 高于最大值 | clamp 到 max |
+| 值 | 含义 | 处理规则（意图分流） |
+|----|------|---------------------|
+| 0 | 禁用思考 | `to_intent()` → `Disabled` → OpenAI/Anthropic: `Disabled`；Gemini: `Budget(0)` 或 clamp 到 min |
+| -1 | 动态预算 | `to_intent()` → `Dynamic` → Anthropic: `auto_budget` 或 `(min+max)/2`；Gemini: `Budget(-1)`；OpenAI: `"medium"` |
+| < min | 低于最小值 | `clamp` 到 min |
+| > max | 高于最大值 | `clamp` 到 max |
 
 ---
 
