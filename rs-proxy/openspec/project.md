@@ -104,5 +104,8 @@ RS-Proxy 在以下方面与 CLIProxyAPI 有意不同：
 4. **简化 auto 等级钳制** → 省略 `mid <= 0` 分支
 5. **透传策略与覆盖行为** → 统一采用"后缀覆盖用户值"策略
 6. **最小干预原则** → 不清理用户请求中的任何字段
+7. **意图分流架构** → 使用 `ThinkingIntent` 枚举（Disabled/Dynamic/Fixed）统一处理特殊值
+8. **原生 Gemini 模型白名单** → 使用前缀白名单区分原生 Gemini 模型与跨协议模型
+9. **跨协议模型 auto_budget** → 为 `gemini-claude-*` 设置 `auto_budget: Some(16384)` 支持 Anthropic 协议
 
 详细说明和理由见 `openspec/changes/add-rs-proxy/design.md`。
