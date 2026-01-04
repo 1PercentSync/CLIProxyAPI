@@ -41,11 +41,34 @@ The system SHALL从模型名称后缀解析思考配置，与 CLIProxyAPI 的 `N
 - **则** The system SHALL 提取基础模型 `model`
 - **且** 提取思考预算 `-1`（表示动态/自动思考预算）
 
+### Requirement: 意图分类
+
+The system SHALL 将解析后的 `ThinkingValue` 转换为用户意图 `ThinkingIntent`。
+
+**文件：** `src/thinking/parser.rs` 和 `src/thinking/mod.rs`
+
+#### Scenario: 禁用思考意图
+- **当** 后缀为 `(none)` 或 `(0)` 时
+- **则** The system SHALL 返回 `ThinkingIntent::Disabled`
+
+#### Scenario: 动态思考意图
+- **当** 后缀为 `(auto)` 或 `(-1)` 时
+- **则** The system SHALL 返回 `ThinkingIntent::Dynamic`
+
+#### Scenario: 固定思考意图
+- **当** 后缀为其他等级（如 `(high)`）或数值（如 `(16384)`）时
+- **则** The system SHALL 返回 `ThinkingIntent::Fixed(FixedThinking::Level|Budget)`
+
+> **设计决策 - 意图分离：**
+>
+> 将特殊值（`none`, `auto`, `0`, `-1`）的处理提升到意图层面，
+> 而非在后续的 `resolve_thinking_config` 中散落多处特殊分支。
+> 这使得代码结构更清晰，每种意图有独立的处理路径。
+
 ### 实现说明
 
-解析器返回如下结构体：
 ```rust
-/// 思考配置值类型
+/// 思考配置值类型（原始解析结果）
 #[derive(Debug, Clone, PartialEq)]
 pub enum ThinkingValue {
     /// 无后缀或空括号 ()
@@ -54,6 +77,61 @@ pub enum ThinkingValue {
     Budget(i32),
     /// 等级字符串（如 "high"、"auto"、"none"）
     Level(String),
+}
+
+impl ThinkingValue {
+    /// 将解析后的值转换为用户意图
+    ///
+    /// 分类规则：
+    /// - `(none)` 或 `(0)` → Disabled（禁用思考）
+    /// - `(auto)` 或 `(-1)` → Dynamic（动态思考）
+    /// - 其他等级或数值 → Fixed（固定思考量）
+    ///
+    /// 返回 `None` 表示无后缀（`ThinkingValue::None`）
+    pub fn to_intent(&self) -> Option<ThinkingIntent> {
+        match self {
+            ThinkingValue::None => None,
+            ThinkingValue::Budget(0) => Some(ThinkingIntent::Disabled),
+            ThinkingValue::Budget(-1) => Some(ThinkingIntent::Dynamic),
+            ThinkingValue::Budget(b) => Some(ThinkingIntent::Fixed(FixedThinking::Budget(*b))),
+            ThinkingValue::Level(level) => {
+                let level_lower = level.to_lowercase();
+                match level_lower.as_str() {
+                    "none" => Some(ThinkingIntent::Disabled),
+                    "auto" => Some(ThinkingIntent::Dynamic),
+                    _ => Some(ThinkingIntent::Fixed(FixedThinking::Level(level_lower))),
+                }
+            }
+        }
+    }
+}
+
+/// 用户的思考意图，从解析后的后缀分类而来
+///
+/// 此中间类型分离用户意图与协议特定的输出格式。
+/// 允许在意图层面处理特殊值（`none`, `auto`, `0`, `-1`），
+/// 而非在协议转换时散落多处特殊分支。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ThinkingIntent {
+    /// 禁用思考：用户请求 `(none)` 或 `(0)`
+    Disabled,
+
+    /// 动态思考：用户请求 `(auto)` 或 `(-1)`
+    /// 由 API 决定思考预算
+    Dynamic,
+
+    /// 固定思考：用户指定具体的等级或预算
+    Fixed(FixedThinking),
+}
+
+/// 固定思考值，等级字符串或数值预算
+#[derive(Debug, Clone, PartialEq)]
+pub enum FixedThinking {
+    /// 用户指定等级字符串：`(high)`, `(low)`, `(medium)` 等
+    Level(String),
+
+    /// 用户指定数值预算：`(8192)`, `(16384)` 等
+    Budget(i32),
 }
 
 /// 解析后的模型信息
@@ -76,62 +154,6 @@ pub struct ParsedModel {
 /// - `claude-sonnet-4` → base_name: "claude-sonnet-4", thinking: None
 /// - `model(high` → base_name: "model(high", thinking: None (不完整括号，原样透传)
 pub fn parse_model_suffix(model: &str) -> ParsedModel {
-    // 查找最后一个 '(' 和 ')'
-    let open_paren = match model.rfind('(') {
-        Some(idx) => idx,
-        None => {
-            // 无括号，原样返回
-            return ParsedModel {
-                base_name: model.to_string(),
-                thinking: ThinkingValue::None,
-            };
-        }
-    };
-
-    let close_paren = match model.rfind(')') {
-        Some(idx) => idx,
-        None => {
-            // 只有 '(' 没有 ')'，不完整括号，原样透传
-            return ParsedModel {
-                base_name: model.to_string(),
-                thinking: ThinkingValue::None,
-            };
-        }
-    };
-
-    // 检查括号顺序：')' 必须在 '(' 之后且在末尾
-    if close_paren <= open_paren || close_paren != model.len() - 1 {
-        // 括号顺序错误或 ')' 不在末尾，原样透传
-        return ParsedModel {
-            base_name: model.to_string(),
-            thinking: ThinkingValue::None,
-        };
-    }
-
-    // 提取基础模型名和后缀内容
-    let base_name = model[..open_paren].to_string();
-    let suffix = &model[open_paren + 1..close_paren];
-
-    // 空后缀
-    if suffix.is_empty() {
-        return ParsedModel {
-            base_name,
-            thinking: ThinkingValue::None,
-        };
-    }
-
-    // 尝试解析为数值
-    if let Ok(budget) = suffix.parse::<i32>() {
-        return ParsedModel {
-            base_name,
-            thinking: ThinkingValue::Budget(budget),
-        };
-    }
-
-    // 等级字符串
-    ParsedModel {
-        base_name,
-        thinking: ThinkingValue::Level(suffix.to_string()),
-    }
+    // ... 实现逻辑同原版 ...
 }
 ```
