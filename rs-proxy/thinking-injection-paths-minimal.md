@@ -54,19 +54,19 @@ ModelInfo {
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(0)` | → `ThinkingConfig::Budget(0)` | `thinkingBudget: 0` |
-| `(auto)` | Gemini 协议特殊处理 → `ThinkingConfig::Budget(-1)` | `thinkingBudget: -1` |
-| `(-1)` | 数值后缀 → 直接透传 | `thinkingBudget: -1` |
-| `(minimal)` | → "minimal" | `thinkingLevel: "minimal"` |
-| `(low)` | → "low" | `thinkingLevel: "low"` |
-| `(medium)` | → "medium" | `thinkingLevel: "medium"` |
-| `(high)` | → "high" | `thinkingLevel: "high"` |
-| `(xhigh)` | levels 不包含 xhigh → clamp 到最高 → "high" | `thinkingLevel: "high"` |
-| `(50)` | 数值后缀 → `clamp_budget(50, 128, 32768)` → 128 | `thinkingBudget: 128` |
-| `(512)` | 数值后缀 → `clamp_budget(512, ...)` → 512 | `thinkingBudget: 512` |
-| `(8192)` | 数值后缀 → 8192 | `thinkingBudget: 8192` |
-| `(50000)` | 数值后缀 → `clamp_budget(50000, ...)` → 32768 | `thinkingBudget: 32768` |
+| `(none)` | `to_intent()` → `Disabled` → `Budget(0)` | `thinkingBudget: 0` |
+| `(0)` | `to_intent()` → `Disabled` → `Budget(0)` | `thinkingBudget: 0` |
+| `(auto)` | `to_intent()` → `Dynamic` → `Budget(-1)` | `thinkingBudget: -1` |
+| `(-1)` | `to_intent()` → `Dynamic` → `Budget(-1)` | `thinkingBudget: -1` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → "minimal" | `thinkingLevel: "minimal"` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → "low" | `thinkingLevel: "low"` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → "medium" | `thinkingLevel: "medium"` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → "high" | `thinkingLevel: "high"` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `clamp` → "high" | `thinkingLevel: "high"` |
+| `(50)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 128 | `thinkingBudget: 128` |
+| `(512)` | `to_intent()` → `Fixed(Budget)` → 512 | `thinkingBudget: 512` |
+| `(8192)` | `to_intent()` → `Fixed(Budget)` → 8192 | `thinkingBudget: 8192` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 32768 | `thinkingBudget: 32768` |
 
 ---
 
@@ -82,21 +82,21 @@ ModelInfo {
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Disabled` | `reasoning_effort: "none"` |
-| `(0)` | → `ThinkingConfig::Disabled` | `reasoning_effort: "none"` |
-| `(auto)` | → "auto" → OpenAI 不支持 → "medium" | `reasoning_effort: "medium"` |
-| `(-1)` | `budget_to_effort(-1)` → "auto" → "medium" | `reasoning_effort: "medium"` |
-| `(minimal)` | → "minimal" ✓ 在 levels | `reasoning_effort: "minimal"` |
-| `(low)` | → "low" | `reasoning_effort: "low"` |
-| `(medium)` | → "medium" | `reasoning_effort: "medium"` |
-| `(high)` | → "high" | `reasoning_effort: "high"` |
-| `(xhigh)` | levels 不包含 xhigh → clamp 到 "high" | `reasoning_effort: "high"` |
-| `(50)` | `clamp_budget(50, ...)` → 128 → `budget_to_effort(128)` → "minimal" | `reasoning_effort: "minimal"` |
-| `(512)` | → 512 → `budget_to_effort(512)` → "minimal" | `reasoning_effort: "minimal"` |
-| `(1024)` | → 1024 → `budget_to_effort(1024)` → "low" | `reasoning_effort: "low"` |
-| `(8192)` | → 8192 → `budget_to_effort(8192)` → "medium" | `reasoning_effort: "medium"` |
-| `(24576)` | → 24576 → `budget_to_effort(24576)` → "high" | `reasoning_effort: "high"` |
-| `(50000)` | `clamp_budget(50000, ...)` → 32768 → `budget_to_effort(32768)` → "xhigh" → clamp → "high" | `reasoning_effort: "high"` |
+| `(none)` | `to_intent()` → `Disabled` → `Disabled` | `reasoning_effort: "none"` |
+| `(0)` | `to_intent()` → `Disabled` → `Disabled` | `reasoning_effort: "none"` |
+| `(auto)` | `to_intent()` → `Dynamic` → `"medium"` | `reasoning_effort: "medium"` |
+| `(-1)` | `to_intent()` → `Dynamic` → `"medium"` | `reasoning_effort: "medium"` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → "minimal" | `reasoning_effort: "minimal"` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → "low" | `reasoning_effort: "low"` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → "medium" | `reasoning_effort: "medium"` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → "high" | `reasoning_effort: "high"` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `clamp` → "high" | `reasoning_effort: "high"` |
+| `(50)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 128 → `budget_to_effort` → "minimal" | `reasoning_effort: "minimal"` |
+| `(512)` | `to_intent()` → `Fixed(Budget)` → 512 → `budget_to_effort` → "minimal" | `reasoning_effort: "minimal"` |
+| `(1024)` | `to_intent()` → `Fixed(Budget)` → 1024 → `budget_to_effort` → "low" | `reasoning_effort: "low"` |
+| `(8192)` | `to_intent()` → `Fixed(Budget)` → 8192 → `budget_to_effort` → "medium" | `reasoning_effort: "medium"` |
+| `(24576)` | `to_intent()` → `Fixed(Budget)` → 24576 → `budget_to_effort` → "high" | `reasoning_effort: "high"` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 32768 → `budget_to_effort` → "xhigh" → `clamp` → "high" | `reasoning_effort: "high"` |
 
 ---
 
@@ -111,19 +111,19 @@ ModelInfo {
 
 | 后缀 | 处理路径 | 最终值 |
 |------|---------|--------|
-| `(none)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(0)` | → `ThinkingConfig::Disabled` | `thinking: { type: "disabled" }` |
-| `(auto)` | `level_to_budget("auto")` → -1 → Anthropic 不支持 → `(128+32768)/2` | `budget_tokens: 16448` |
-| `(-1)` | Anthropic 不支持 → `(128+32768)/2` | `budget_tokens: 16448` |
-| `(minimal)` | `level_to_budget("minimal")` → 512 → 512 | `budget_tokens: 512` |
-| `(low)` | `level_to_budget("low")` → 1024 → 1024 | `budget_tokens: 1024` |
-| `(medium)` | `level_to_budget("medium")` → 8192 → 8192 | `budget_tokens: 8192` |
-| `(high)` | `level_to_budget("high")` → 24576 → 24576 | `budget_tokens: 24576` |
-| `(xhigh)` | `level_to_budget("xhigh")` → 32768 → 32768 | `budget_tokens: 32768` |
-| `(50)` | `clamp_budget(50, 128, 32768)` → 128 | `budget_tokens: 128` |
-| `(512)` | → 512 | `budget_tokens: 512` |
-| `(8192)` | → 8192 | `budget_tokens: 8192` |
-| `(50000)` | `clamp_budget(50000, ...)` → 32768 | `budget_tokens: 32768` |
+| `(none)` | `to_intent()` → `Disabled` → `Disabled` | `thinking: { type: "disabled" }` |
+| `(0)` | `to_intent()` → `Disabled` → `Disabled` | `thinking: { type: "disabled" }` |
+| `(auto)` | `to_intent()` → `Dynamic` → `(min+max)/2` → 16448 | `budget_tokens: 16448` |
+| `(-1)` | `to_intent()` → `Dynamic` → `(min+max)/2` → 16448 | `budget_tokens: 16448` |
+| `(minimal)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 512 | `budget_tokens: 512` |
+| `(low)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 1024 | `budget_tokens: 1024` |
+| `(medium)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 8192 | `budget_tokens: 8192` |
+| `(high)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 24576 | `budget_tokens: 24576` |
+| `(xhigh)` | `to_intent()` → `Fixed(Level)` → `level_to_budget` → 32768 | `budget_tokens: 32768` |
+| `(50)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 128 | `budget_tokens: 128` |
+| `(512)` | `to_intent()` → `Fixed(Budget)` → 512 | `budget_tokens: 512` |
+| `(8192)` | `to_intent()` → `Fixed(Budget)` → 8192 | `budget_tokens: 8192` |
+| `(50000)` | `to_intent()` → `Fixed(Budget)` → `clamp` → 32768 | `budget_tokens: 32768` |
 
 ---
 
