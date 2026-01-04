@@ -92,6 +92,49 @@ RS-Proxy 是一个独立的轻量级 Rust 反向代理，透明转发 API 请求
   2. RS-Proxy 是透明代理，不应过度干预请求内容
   3. 简化实现，避免复杂的清理逻辑
 
+### 决策 11：意图分流架构
+- **做法：** 将用户输入分类为三种意图（`Disabled`、`Dynamic`、`Fixed`），在意图层面统一处理特殊值
+- **类型定义：**
+  ```rust
+  enum ThinkingIntent {
+      Disabled,           // (none) 或 (0)
+      Dynamic,            // (auto) 或 (-1)
+      Fixed(FixedThinking), // 其他等级或数值
+  }
+  ```
+- **原因：**
+  1. 将 `auto`/`-1` 和 `none`/`0` 的特殊处理提升到入口处，避免在后续代码中散落多处特殊分支
+  2. 每种意图有独立的协议适配路径，代码结构更清晰
+  3. 类型系统明确表达用户意图，减少错误
+- **处理流程：**
+  ```
+  parse_model_suffix() → ThinkingValue
+      ↓
+  to_intent() → ThinkingIntent
+      ├─ Disabled → 协议特定的禁用处理
+      ├─ Dynamic → 协议特定的动态处理
+      └─ Fixed → clamp + 协议转换
+      ↓
+  resolve_intent_to_config() → ThinkingConfig
+      ↓
+  inject_{openai,anthropic,gemini}()
+  ```
+
+### 决策 12：原生 Gemini 模型白名单
+- **做法：** 使用白名单前缀判断模型是否为原生 Gemini 模型
+- **白名单：** `gemini-2.5-`、`gemini-3-`、`gemini-pro`、`gemini-flash`
+- **原因：**
+  1. 跨协议模型（如 `gemini-claude-opus-4-5-thinking`）以 `gemini-` 开头但不是原生 Gemini 模型
+  2. 在 Gemini 协议下处理 `Disabled` 意图时，原生 Gemini 2.5 模型需要 clamp 到 min，而跨协议模型直接传 0
+  3. 使用白名单比黑名单更安全，新增跨协议模型不需要更新代码
+
+### 决策 13：跨协议模型的 auto_budget 配置
+- **做法：** 为跨协议模型（如 `gemini-claude-*`）设置 `auto_budget: Some(16384)`
+- **原因：**
+  1. Gemini 协议支持 `thinkingBudget: -1`，但 Anthropic 协议不支持 `budget_tokens: -1`
+  2. 当用户对这些模型使用 `(auto)` 并通过 Anthropic 协议调用时，需要回退到固定预算
+  3. 统一使用 16384 作为 auto 的回退值，与 Claude 原生模型保持一致
+
 ## 风险 / 权衡
 
 | 风险 | 缓解措施 |
@@ -170,6 +213,8 @@ src/
 |------|----------|--------|
 | `Protocol` | `protocol/mod.rs` | `thinking/injector.rs`, `models/enhancer.rs`, `proxy/client.rs` |
 | `ThinkingConfig` | `thinking/mod.rs` | `thinking/injector.rs`, `protocol/*.rs` |
+| `ThinkingIntent` | `thinking/mod.rs` | `thinking/parser.rs`, `thinking/injector.rs` |
+| `FixedThinking` | `thinking/mod.rs` | `thinking/parser.rs`, `thinking/injector.rs` |
 | `ModelInfo` | `models/registry.rs` | `thinking/injector.rs`, `models/enhancer.rs` |
 | `ThinkingSupport` | `models/registry.rs` | `thinking/injector.rs`, `thinking/models.rs` |
 
@@ -190,10 +235,15 @@ src/
 │    inject_thinking_config(body, model, protocol, path)          │
 │    → InjectionResult::Injected / PassThrough / Error            │
 │                                                                 │
-│    内部流程：                                                    │
-│    ├── parse_model_suffix() → 解析后缀                          │
+│    内部流程（意图分流架构）：                                     │
+│    ├── parse_model_suffix() → ParsedModel                       │
+│    ├── to_intent() → ThinkingIntent                             │
+│    │     ├─ None → PassThrough                                  │
+│    │     ├─ Disabled → 协议特定禁用处理                          │
+│    │     ├─ Dynamic → 协议特定动态处理                           │
+│    │     └─ Fixed → clamp + 协议转换                            │
 │    ├── get_model_info() → 查询注册表                            │
-│    ├── resolve_thinking_config() → 转换 + 钳制                  │
+│    ├── resolve_intent_to_config() → ThinkingConfig              │
 │    └── inject_{openai,anthropic,gemini}() → 协议特定注入        │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
