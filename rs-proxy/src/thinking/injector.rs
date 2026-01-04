@@ -5,11 +5,31 @@
 
 use crate::models::registry::{ModelInfo, get_model_info};
 use crate::protocol::{Protocol, inject_anthropic, inject_gemini, inject_openai};
-use crate::thinking::ThinkingConfig;
+use crate::thinking::{FixedThinking, ThinkingConfig, ThinkingIntent};
 use crate::thinking::models::{
     budget_to_effort, clamp_budget, clamp_effort_to_levels, level_to_budget,
 };
-use crate::thinking::parser::{ThinkingValue, parse_model_suffix};
+use crate::thinking::parser::parse_model_suffix;
+
+/// Default budget for "medium" level, used when auto_budget is not configured.
+const DEFAULT_MEDIUM_BUDGET: i32 = 8192; // level_to_budget("medium")
+
+/// Native Gemini model prefixes (whitelist).
+///
+/// These are models that run natively on Gemini API.
+/// Models like `gemini-claude-*` are cross-protocol (Claude via Gemini API)
+/// and should NOT be treated as native Gemini models.
+const NATIVE_GEMINI_PREFIXES: &[&str] = &[
+    "gemini-2.5-",
+    "gemini-3-",
+    "gemini-pro",
+    "gemini-flash",
+];
+
+/// Check if model is a native Gemini model.
+fn is_native_gemini_model(model_id: &str) -> bool {
+    NATIVE_GEMINI_PREFIXES.iter().any(|prefix| model_id.starts_with(prefix))
+}
 
 /// Check if path is an OpenAI Responses endpoint.
 fn is_responses_endpoint(path: &str) -> bool {
@@ -38,10 +58,11 @@ pub struct InjectionError {
 ///
 /// Coordinates the entire thinking injection workflow:
 /// 1. Parse model suffix
-/// 2. Validate model exists in registry
-/// 3. Check thinking support
-/// 4. Map and clamp values
-/// 5. Protocol-specific injection
+/// 2. Convert to intent (Disabled/Dynamic/Fixed)
+/// 3. Validate model exists in registry
+/// 4. Check thinking support
+/// 5. Resolve intent to protocol-specific config
+/// 6. Protocol-specific injection
 ///
 /// # Arguments
 /// * `body` - Request body JSON
@@ -58,15 +79,15 @@ pub fn inject_thinking_config(
     let parsed = parse_model_suffix(model_with_suffix);
     let base_model = parsed.base_name;
 
-    // 2. No suffix or empty suffix: strip parentheses and passthrough
-    let thinking_value = match parsed.thinking {
-        ThinkingValue::None => {
-            // Empty parentheses or no suffix: update model name and passthrough
+    // 2. Convert to intent - early return if no suffix
+    let intent = match parsed.thinking.to_intent() {
+        None => {
+            // No suffix: update model name and passthrough
             let mut body = body;
             body["model"] = serde_json::Value::String(base_model);
             return InjectionResult::PassThrough(body);
         }
-        v => v,
+        Some(intent) => intent,
     };
 
     // 3. Check if model is known
@@ -88,8 +109,8 @@ pub fn inject_thinking_config(
         return InjectionResult::PassThrough(body);
     }
 
-    // 5. Resolve thinking config (map and clamp)
-    let thinking_config = match resolve_thinking_config(thinking_value, model_info, protocol) {
+    // 5. Resolve intent to thinking config (with protocol adaptation)
+    let thinking_config = match resolve_intent_to_config(intent, model_info, protocol) {
         Ok(config) => config,
         Err(e) => return InjectionResult::Error(e),
     };
@@ -107,244 +128,203 @@ pub fn inject_thinking_config(
     InjectionResult::Injected(injected)
 }
 
-/// Resolve thinking configuration.
+/// Resolve user intent to protocol-specific thinking configuration.
 ///
-/// Converts input value (level or budget) to the format required by the target protocol,
-/// applying appropriate mapping and clamping.
+/// This function handles three distinct intents:
+/// - `Disabled`: User wants to disable thinking
+/// - `Dynamic`: User wants dynamic/auto thinking
+/// - `Fixed`: User specified a concrete level or budget
 ///
-/// Key design: Return type is determined by **protocol requirements**, not input type or model's native format:
-/// - OpenAI protocol: always returns Effort (or Disabled for "none")
-/// - Anthropic protocol: always returns Budget (or Disabled for 0)
-/// - Gemini protocol: depends on model (2.5 uses Budget, 3 uses Effort based on whether model has levels)
+/// The output format is determined by **protocol requirements**:
+/// - OpenAI protocol: always returns Effort (or Disabled)
+/// - Anthropic protocol: always returns Budget (or Disabled)
+/// - Gemini protocol: depends on model (3.x uses Effort for levels, 2.5 uses Budget)
 ///
-/// # Design Decision: Disabled Thinking
+/// # Intent Processing
 ///
-/// When `level = "none"` or `budget = 0`, returns `ThinkingConfig::Disabled`.
-/// This is handled **before** any clamping, so `zero_allowed` does not affect this behavior.
-/// The `zero_allowed` flag only affects whether `budget_tokens: 0` can be sent to the API
-/// (for models that support it), but for disabling thinking we use protocol-specific methods.
-fn resolve_thinking_config(
-    thinking_value: ThinkingValue,
+/// ## Disabled Intent
+/// - Anthropic: `Disabled` → `thinking: { type: "disabled" }`
+/// - OpenAI: `Disabled` → `reasoning_effort: "none"`
+/// - Gemini (with levels): `Budget(0)` → `thinkingBudget: 0`
+/// - Gemini 2.5 (native): clamp to min (API doesn't support 0)
+/// - Gemini (cross-protocol): `Budget(0)` → `thinkingBudget: 0`
+///
+/// ## Dynamic Intent
+/// - Anthropic: use `auto_budget` or `(min+max)/2` (API doesn't support -1)
+/// - OpenAI: `Effort("medium")` (API doesn't support auto)
+/// - Gemini: `Budget(-1)` (API supports dynamic)
+///
+/// ## Fixed Intent
+/// - Apply clamping and convert to protocol format
+fn resolve_intent_to_config(
+    intent: ThinkingIntent,
     model_info: &ModelInfo,
     protocol: Protocol,
 ) -> Result<ThinkingConfig, InjectionError> {
-    eprintln!("[DEBUG] resolve_thinking_config: value={:?}, model={}, protocol={:?}", thinking_value, model_info.id, protocol);
     let thinking = model_info.thinking.as_ref().unwrap();
     let model_uses_levels = thinking.levels.is_some();
 
-    // Check if model has a valid budget range (for clamping)
-    // If max == 0, model only uses Levels (like OpenAI models)
-    let has_budget_range = thinking.max > 0;
-
     // Determine what return type the protocol needs
+    // For Gemini protocol with level input, use Effort for models with levels
+    // For Gemini protocol with budget input, use Budget to respect user intent
     let needs_effort = match protocol {
         Protocol::OpenAI => true,
         Protocol::Anthropic => false,
-        Protocol::Gemini => model_uses_levels, // Gemini 2.5 no levels, Gemini 3 has levels
+        Protocol::Gemini => model_uses_levels,
     };
 
-    // Helper: Check if we need to clamp "none" to another level
-    // OpenAI protocol can pass through "none" to let upstream API handle it
-    // Anthropic protocol can always disable thinking explicitly via { type: "disabled" }
-    // So we don't need to clamp for any protocol - just pass through the user's intent
-    let needs_none_clamp = false; // No longer needed - always respect user intent
-
-    match thinking_value {
-        ThinkingValue::Budget(budget) => {
-            // Handle disabled thinking: budget == 0
-            if budget == 0 {
-                eprintln!("[DEBUG] Budget is 0, handling for protocol: {:?}", protocol);
-                // For Gemini protocol, check if we should clamp or pass through 0
-                // - Models with levels (Gemini 3): pass through 0 (thinkingBudget: 0 disables thinking)
-                // - Models without levels but are native Gemini (Gemini 2.5): clamp to min
-                // - Cross-protocol calls (Claude + Gemini): pass through 0
-                let is_native_gemini_model = model_info.id.starts_with("gemini-");
-                if matches!(protocol, Protocol::Gemini) && model_uses_levels {
-                    // Gemini 3 (has levels): pass through 0 as Budget(0)
-                    eprintln!("[DEBUG] Gemini protocol + model has levels: returning Budget(0)");
-                    return Ok(ThinkingConfig::Budget(0));
-                } else if matches!(protocol, Protocol::Gemini) && !model_uses_levels && is_native_gemini_model {
-                    // Gemini 2.5 (no levels, native Gemini model): fall through to clamp
-                    // zero_allowed=false means 0 should be clamped to min
-                    eprintln!("[DEBUG] Gemini protocol + native Gemini model without levels: will clamp");
-                } else if matches!(protocol, Protocol::Gemini) {
-                    // Cross-protocol (e.g., Claude + Gemini): pass through 0
-                    eprintln!("[DEBUG] Gemini protocol + cross-protocol call: returning Budget(0)");
-                    return Ok(ThinkingConfig::Budget(0));
-                } else if needs_none_clamp {
-                    // OpenAI protocol + model has levels without "none" - fall through to clamp
-                    eprintln!("[DEBUG] OpenAI protocol + model has levels without 'none', will clamp");
+    match intent {
+        // ===== DISABLED INTENT =====
+        // User requested (none) or (0) - wants to disable thinking
+        ThinkingIntent::Disabled => match protocol {
+            Protocol::Anthropic | Protocol::OpenAI => Ok(ThinkingConfig::Disabled),
+            Protocol::Gemini => {
+                // Gemini protocol: behavior depends on model type
+                if model_uses_levels {
+                    // Gemini 3 (has levels): use Budget(0) to disable
+                    Ok(ThinkingConfig::Budget(0))
+                } else if is_native_gemini_model(model_info.id) {
+                    // Gemini 2.5 (native, no levels): clamp to min
+                    Ok(ThinkingConfig::Budget(thinking.min))
                 } else {
-                    // Anthropic protocol, or model supports "none"
-                    eprintln!("[DEBUG] Returning Disabled");
-                    return Ok(ThinkingConfig::Disabled);
+                    // Cross-protocol (e.g., Claude via Gemini API): pass through 0
+                    Ok(ThinkingConfig::Budget(0))
                 }
             }
+        },
 
-            // Numeric suffix
-            // Determine if dynamic budget (-1) is allowed based on protocol AND model
-            // - Anthropic protocol doesn't support budget_tokens: -1
-            // - OpenAI protocol: -1 goes through budget_to_effort → "auto" → "medium" (handled separately)
-            // - Gemini protocol: depends on model's dynamic_allowed
-            let protocol_allows_dynamic = matches!(protocol, Protocol::Gemini);
-            let effective_dynamic_allowed = thinking.dynamic_allowed && protocol_allows_dynamic;
-
-            let clamped = if has_budget_range {
-                // For Gemini protocol, -1 should pass through (Gemini supports thinkingBudget: -1)
-                if budget == -1 && matches!(protocol, Protocol::Gemini) {
-                    budget // Pass through -1 for Gemini protocol
-                } else if needs_effort && budget == -1 {
-                    // For Effort output, -1 should stay as -1 to become "auto" → "medium"
-                    // This ensures (-1) and (auto) have consistent semantics for OpenAI protocol
-                    budget // Pass through -1, budget_to_effort(-1) → "auto" → "medium"
-                } else {
-                    clamp_budget(
-                        budget,
-                        thinking.min,
-                        thinking.max,
-                        thinking.zero_allowed,
-                        effective_dynamic_allowed,
-                        thinking.auto_budget,
-                    )
-                }
-            } else {
-                // Model has no budget range (like OpenAI models)
-                // For Gemini protocol, allow -1 to pass through (Gemini supports dynamic)
-                if budget == -1 && matches!(protocol, Protocol::Gemini) {
-                    budget // Pass through -1 for Gemini protocol
-                } else if budget == -1 && !effective_dynamic_allowed {
-                    // Convert -1 to default budget for protocols that don't support dynamic
-                    thinking.auto_budget.unwrap_or(8192)
-                } else if budget == 0 && needs_none_clamp {
-                    // OpenAI protocol + model has levels without "none", use default
-                    thinking.auto_budget.unwrap_or(8192)
-                } else {
-                    budget
-                }
-            };
-
-            // For Gemini protocol with numeric suffix, respect user intent: use Budget directly
-            // User explicitly provided a number, so output thinkingBudget, not thinkingLevel
-            if matches!(protocol, Protocol::Gemini) {
-                return Ok(ThinkingConfig::Budget(clamped));
-            }
-
-            if needs_effort {
-                // Protocol needs Effort, convert budget to level using generic mapping
-                let effort = budget_to_effort(clamped);
-                let clamped_effort = if let Some(levels) = thinking.levels {
-                    // Model has discrete levels, clamp to supported levels
-                    clamp_effort_to_levels(effort, levels)
-                } else {
-                    effort
-                };
-                // OpenAI protocol doesn't support "auto", treat as "medium"
-                // This applies regardless of whether model supports auto
-                let final_effort = if clamped_effort == "auto" {
-                    "medium"
-                } else {
-                    clamped_effort
-                };
-                Ok(ThinkingConfig::Effort(final_effort.to_string()))
-            } else {
-                // Protocol needs Budget
-                Ok(ThinkingConfig::Budget(clamped))
-            }
-        }
-        ThinkingValue::Level(level) => {
-            // Level suffix
-            let level = level.to_lowercase();
-
-            // Handle "none" level
-            // Only OpenAI protocol needs to clamp when model's levels don't include "none"
-            // Anthropic protocol can always disable thinking explicitly
-            if level == "none" {
-                eprintln!("[DEBUG] Level is 'none', handling for protocol: {:?}", protocol);
-                // For Gemini protocol, same logic as budget == 0
-                let is_native_gemini_model = model_info.id.starts_with("gemini-");
-                if matches!(protocol, Protocol::Gemini) && model_uses_levels {
-                    // Gemini 3 (has levels): pass through 0 as Budget(0)
-                    eprintln!("[DEBUG] Gemini protocol + model has levels: returning Budget(0) for 'none' level");
-                    return Ok(ThinkingConfig::Budget(0));
-                } else if matches!(protocol, Protocol::Gemini) && !model_uses_levels && is_native_gemini_model {
-                    // Gemini 2.5 (no levels, native Gemini model): fall through to clamp
-                    eprintln!("[DEBUG] Gemini protocol + native Gemini model without levels: will clamp 'none' level");
-                } else if matches!(protocol, Protocol::Gemini) {
-                    // Cross-protocol (e.g., Claude + Gemini): pass through 0
-                    eprintln!("[DEBUG] Gemini protocol + cross-protocol call: returning Budget(0) for 'none' level");
-                    return Ok(ThinkingConfig::Budget(0));
-                } else if needs_none_clamp {
-                    // OpenAI protocol + model has levels without "none" - fall through to clamp
-                    eprintln!("[DEBUG] OpenAI protocol + model has levels without 'none', will clamp");
-                } else {
-                    // Anthropic protocol, or model supports "none"
-                    eprintln!("[DEBUG] Returning Disabled");
-                    return Ok(ThinkingConfig::Disabled);
-                }
-            }
-
-            // Handle (auto) level for Gemini protocol: use Budget(-1) for dynamic thinking
-            // This respects user intent: "auto" means dynamic, Gemini supports thinkingBudget: -1
-            if level == "auto" && matches!(protocol, Protocol::Gemini) {
-                eprintln!("[DEBUG] Level is 'auto' with Gemini protocol: returning Budget(-1)");
-                return Ok(ThinkingConfig::Budget(-1));
-            }
-
-            // Validate level string
-            if level_to_budget(&level).is_none() {
-                return Err(InjectionError {
-                    status: 400,
-                    message: format!("invalid thinking level: {}", level),
-                });
-            }
-
-            if needs_effort {
-                // Protocol needs Effort
-                let clamped_effort = if let Some(levels) = thinking.levels {
-                    // Model has discrete levels, clamp to supported levels
-                    clamp_effort_to_levels(&level, levels)
-                } else {
-                    &level
-                };
-                // OpenAI protocol doesn't support "auto", treat as "medium"
-                // This applies regardless of whether model supports auto
-                let final_effort = if clamped_effort == "auto" {
-                    "medium"
-                } else {
-                    clamped_effort
-                };
-                Ok(ThinkingConfig::Effort(final_effort.to_string()))
-            } else {
-                // Protocol needs Budget, convert level to budget (already validated, unwrap safe)
-                let budget = level_to_budget(&level).unwrap();
-
-                // Determine if dynamic budget (-1) is allowed based on protocol AND model
-                // (auto) → -1, Anthropic protocol doesn't support budget_tokens: -1
-                let protocol_allows_dynamic = matches!(protocol, Protocol::Gemini);
-                let effective_dynamic_allowed = thinking.dynamic_allowed && protocol_allows_dynamic;
-
-                let clamped = if has_budget_range {
-                    clamp_budget(
-                        budget,
-                        thinking.min,
-                        thinking.max,
-                        thinking.zero_allowed,
-                        effective_dynamic_allowed,
-                        thinking.auto_budget,
-                    )
-                } else {
-                    // Model has no budget range (e.g., OpenAI model via Anthropic protocol)
-                    // But still need to handle -1 for Anthropic protocol
-                    if budget == -1 && !effective_dynamic_allowed {
-                        thinking.auto_budget.unwrap_or(8192) // Default to medium if no auto_budget
+        // ===== DYNAMIC INTENT =====
+        // User requested (auto) or (-1) - wants dynamic/auto thinking
+        ThinkingIntent::Dynamic => match protocol {
+            Protocol::Anthropic => {
+                // Anthropic doesn't support budget_tokens: -1
+                // Use auto_budget if configured, otherwise (min+max)/2
+                let fallback = thinking.auto_budget.unwrap_or_else(|| {
+                    if thinking.max > 0 {
+                        (thinking.min + thinking.max) / 2
                     } else {
-                        budget
+                        DEFAULT_MEDIUM_BUDGET
                     }
-                };
-                Ok(ThinkingConfig::Budget(clamped))
+                });
+                Ok(ThinkingConfig::Budget(fallback))
             }
+            Protocol::OpenAI => {
+                // OpenAI doesn't support reasoning_effort: "auto"
+                // Convert to "medium", then clamp to model's supported levels
+                let effort = if let Some(levels) = thinking.levels {
+                    clamp_effort_to_levels("medium", levels)
+                } else {
+                    "medium"
+                };
+                Ok(ThinkingConfig::Effort(effort.to_string()))
+            }
+            Protocol::Gemini => {
+                // Gemini supports thinkingBudget: -1 for dynamic
+                Ok(ThinkingConfig::Budget(-1))
+            }
+        },
+
+        // ===== FIXED INTENT =====
+        // User specified a concrete level or budget
+        ThinkingIntent::Fixed(fixed) => match fixed {
+            FixedThinking::Level(level) => {
+                resolve_fixed_level(&level, model_info, protocol, needs_effort)
+            }
+            FixedThinking::Budget(budget) => {
+                resolve_fixed_budget(budget, model_info, protocol, needs_effort)
+            }
+        },
+    }
+}
+
+/// Resolve a fixed level to protocol-specific config.
+fn resolve_fixed_level(
+    level: &str,
+    model_info: &ModelInfo,
+    _protocol: Protocol,
+    needs_effort: bool,
+) -> Result<ThinkingConfig, InjectionError> {
+    let thinking = model_info.thinking.as_ref().unwrap();
+
+    // Validate level string
+    let budget = match level_to_budget(level) {
+        Some(b) => b,
+        None => {
+            return Err(InjectionError {
+                status: 400,
+                message: format!("invalid thinking level: {}", level),
+            });
         }
-        ThinkingValue::None => unreachable!("None case handled earlier"),
+    };
+
+    if needs_effort {
+        // Protocol needs Effort (OpenAI or Gemini 3 with levels)
+        let effort = if let Some(levels) = thinking.levels {
+            clamp_effort_to_levels(level, levels)
+        } else {
+            level
+        };
+        Ok(ThinkingConfig::Effort(effort.to_string()))
+    } else {
+        // Protocol needs Budget (Anthropic or Gemini 2.5)
+        let clamped = clamp_budget_for_model(budget, thinking, false);
+        Ok(ThinkingConfig::Budget(clamped))
+    }
+}
+
+/// Resolve a fixed budget to protocol-specific config.
+fn resolve_fixed_budget(
+    budget: i32,
+    model_info: &ModelInfo,
+    protocol: Protocol,
+    _needs_effort: bool,
+) -> Result<ThinkingConfig, InjectionError> {
+    let thinking = model_info.thinking.as_ref().unwrap();
+
+    match protocol {
+        Protocol::Gemini => {
+            // Gemini protocol: respect user's budget input, use thinkingBudget
+            let clamped = clamp_budget_for_model(budget, thinking, thinking.dynamic_allowed);
+            Ok(ThinkingConfig::Budget(clamped))
+        }
+        Protocol::OpenAI => {
+            // OpenAI protocol: convert budget to effort
+            let clamped = clamp_budget_for_model(budget, thinking, false);
+            let effort = budget_to_effort(clamped);
+            let effort = if let Some(levels) = thinking.levels {
+                clamp_effort_to_levels(effort, levels)
+            } else {
+                effort
+            };
+            Ok(ThinkingConfig::Effort(effort.to_string()))
+        }
+        Protocol::Anthropic => {
+            // Anthropic protocol: use budget directly
+            let clamped = clamp_budget_for_model(budget, thinking, false);
+            Ok(ThinkingConfig::Budget(clamped))
+        }
+    }
+}
+
+/// Helper: Clamp budget using model's thinking support configuration.
+///
+/// Returns the budget unchanged if model has no budget range (max == 0).
+fn clamp_budget_for_model(
+    budget: i32,
+    thinking: &crate::models::registry::ThinkingSupport,
+    allow_dynamic: bool,
+) -> i32 {
+    if thinking.max > 0 {
+        clamp_budget(
+            budget,
+            thinking.min,
+            thinking.max,
+            thinking.zero_allowed,
+            allow_dynamic,
+            thinking.auto_budget,
+        )
+    } else {
+        budget
     }
 }
 
@@ -352,6 +332,95 @@ fn resolve_thinking_config(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // ===== Native Gemini Model Detection Tests =====
+
+    #[test]
+    fn test_is_native_gemini_model() {
+        // Native Gemini models (should return true)
+        assert!(is_native_gemini_model("gemini-2.5-pro"));
+        assert!(is_native_gemini_model("gemini-2.5-flash"));
+        assert!(is_native_gemini_model("gemini-2.5-flash-lite"));
+        assert!(is_native_gemini_model("gemini-3-pro-preview"));
+        assert!(is_native_gemini_model("gemini-3-flash-preview"));
+        assert!(is_native_gemini_model("gemini-pro-latest"));
+        assert!(is_native_gemini_model("gemini-flash-latest"));
+
+        // Cross-protocol models (should return false)
+        assert!(!is_native_gemini_model("gemini-claude-opus-4-5-thinking"));
+        assert!(!is_native_gemini_model("gemini-claude-sonnet-4-5-thinking"));
+
+        // Non-Gemini models (should return false)
+        assert!(!is_native_gemini_model("claude-sonnet-4"));
+        assert!(!is_native_gemini_model("gpt-5.1"));
+        assert!(!is_native_gemini_model("qwen-3-235b"));
+    }
+
+    // ===== Cross-Protocol Model Tests (gemini-claude-*) =====
+
+    #[test]
+    fn test_gemini_claude_gemini_auto_suffix() {
+        // gemini-claude model with (auto) via Gemini protocol should get Budget(-1)
+        let body = json!({"model": "gemini-claude-opus-4-5-thinking(auto)", "contents": []});
+        let result = inject_thinking_config(
+            body,
+            "gemini-claude-opus-4-5-thinking(auto)",
+            Protocol::Gemini,
+            "/v1beta/models/gemini-claude-opus-4-5-thinking:generateContent",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-claude-opus-4-5-thinking");
+                // Gemini protocol supports dynamic, so -1 passes through
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1);
+            }
+            _ => panic!("Expected Injected"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_claude_anthropic_auto_suffix() {
+        // gemini-claude model with (auto) via Anthropic protocol should get auto_budget=16384
+        let body = json!({"model": "gemini-claude-opus-4-5-thinking(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body,
+            "gemini-claude-opus-4-5-thinking(auto)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-claude-opus-4-5-thinking");
+                assert_eq!(body["thinking"]["type"], "enabled");
+                assert_eq!(body["thinking"]["budget_tokens"], 16384);
+            }
+            _ => panic!("Expected Injected with budget 16384"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_claude_gemini_none_suffix() {
+        // gemini-claude model with (none) via Gemini protocol should get Budget(0)
+        // because it's cross-protocol, not native Gemini
+        let body = json!({"model": "gemini-claude-opus-4-5-thinking(none)", "contents": []});
+        let result = inject_thinking_config(
+            body,
+            "gemini-claude-opus-4-5-thinking(none)",
+            Protocol::Gemini,
+            "/v1beta/models/gemini-claude-opus-4-5-thinking:generateContent",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-claude-opus-4-5-thinking");
+                // Cross-protocol: Budget(0) passes through, NOT clamped to min
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with Budget(0)"),
+        }
+    }
 
     // ===== Basic Functionality Tests =====
 
@@ -2999,6 +3068,817 @@ mod tests {
                 assert_eq!(body["thinking"]["budget_tokens"], 32768); // clamped to max
             }
             _ => panic!("Expected Injected with clamped budget"),
+        }
+    }
+
+    // ===== Gemini 3 Flash + Gemini Protocol Tests =====
+    // Model: gemini-3-flash-preview
+    // levels: ["minimal", "low", "medium", "high"], min: 128, max: 32768, dynamic_allowed: true
+
+    #[test]
+    fn test_gemini_3_flash_gemini_none_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(none)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(none)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        // Gemini 3 has levels, so (none) returns Budget(0)
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with thinkingBudget: 0"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_zero_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(0)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(0)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 0);
+            }
+            _ => panic!("Expected Injected with thinkingBudget: 0"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_auto_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(auto)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(auto)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        // Gemini protocol + (auto) → thinkingBudget: -1
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1);
+            }
+            _ => panic!("Expected Injected with thinkingBudget: -1"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_negative_one_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(-1)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(-1)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], -1);
+            }
+            _ => panic!("Expected Injected with thinkingBudget: -1"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_minimal_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(minimal)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(minimal)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        // Model has levels including "minimal" → thinkingLevel
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "minimal");
+            }
+            _ => panic!("Expected Injected with thinkingLevel: minimal"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_low_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(low)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(low)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "low");
+            }
+            _ => panic!("Expected Injected with thinkingLevel: low"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_medium_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(medium)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(medium)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "medium");
+            }
+            _ => panic!("Expected Injected with thinkingLevel: medium"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_high_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(high)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(high)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "high");
+            }
+            _ => panic!("Expected Injected with thinkingLevel: high"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_xhigh_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(xhigh)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(xhigh)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        // levels don't include "xhigh" → clamp to "high"
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingLevel"], "high");
+            }
+            _ => panic!("Expected Injected with thinkingLevel: high (clamped from xhigh)"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_50_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(50)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(50)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        // Numeric suffix → thinkingBudget, clamp to min (128)
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 128);
+            }
+            _ => panic!("Expected Injected with thinkingBudget: 128 (clamped)"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_512_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(512)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(512)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 512);
+            }
+            _ => panic!("Expected Injected with thinkingBudget: 512"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_8192_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(8192)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(8192)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 8192);
+            }
+            _ => panic!("Expected Injected with thinkingBudget: 8192"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_gemini_50000_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(50000)", "contents": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(50000)",
+            Protocol::Gemini,
+            "/v1/models",
+        );
+
+        // clamp to max (32768)
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["generationConfig"]["thinkingConfig"]["thinkingBudget"], 32768);
+            }
+            _ => panic!("Expected Injected with thinkingBudget: 32768 (clamped)"),
+        }
+    }
+
+    // ===== Gemini 3 Flash + OpenAI Protocol Tests =====
+    // Cross-protocol: Gemini model via OpenAI protocol
+
+    #[test]
+    fn test_gemini_3_flash_openai_none_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(none)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "none");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: none"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_zero_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(0)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "none");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: none"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_auto_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(auto)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        // OpenAI doesn't support "auto" → "medium"
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "medium");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: medium (auto → medium)"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_negative_one_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(-1)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        // -1 → "auto" → "medium"
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "medium");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: medium (-1 → auto → medium)"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_minimal_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(minimal)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        // "minimal" is in levels → pass through
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "minimal");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: minimal"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_low_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(low)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(low)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "low");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: low"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_medium_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(medium)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(medium)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "medium");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: medium"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_high_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(high)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(high)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "high");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: high"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_xhigh_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(xhigh)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(xhigh)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        // "xhigh" not in levels → clamp to "high"
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "high");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: high (clamped from xhigh)"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_50_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(50)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(50)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        // 50 → clamp to 128 → budget_to_effort(128) → "minimal"
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "minimal");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: minimal (50 → 128 → minimal)"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_512_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(512)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(512)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        // 512 → budget_to_effort(512) → "minimal"
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "minimal");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: minimal"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_1024_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(1024)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(1024)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        // 1024 → budget_to_effort(1024) → "low"
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "low");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: low"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_8192_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(8192)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(8192)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        // 8192 → budget_to_effort(8192) → "medium"
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "medium");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: medium"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_24576_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(24576)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(24576)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        // 24576 → budget_to_effort(24576) → "high"
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "high");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: high"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_openai_50000_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(50000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(50000)",
+            Protocol::OpenAI,
+            "/v1/chat/completions",
+        );
+
+        // 50000 → clamp to 32768 → budget_to_effort(32768) → "xhigh" → clamp to "high"
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["reasoning_effort"], "high");
+            }
+            _ => panic!("Expected Injected with reasoning_effort: high (50000 → 32768 → xhigh → high)"),
+        }
+    }
+
+    // ===== Gemini 3 Flash + Anthropic Protocol Tests =====
+    // Cross-protocol: Gemini model via Anthropic protocol
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_none_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(none)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(none)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["type"], "disabled");
+            }
+            _ => panic!("Expected Injected with thinking: disabled"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_zero_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(0)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(0)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["type"], "disabled");
+            }
+            _ => panic!("Expected Injected with thinking: disabled"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_auto_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(auto)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(auto)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        // Anthropic doesn't support -1 → use (min+max)/2 = (128+32768)/2 = 16448
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 16448);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 16448"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_negative_one_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(-1)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(-1)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        // Anthropic doesn't support -1 → use (min+max)/2 = 16448
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 16448);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 16448"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_minimal_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(minimal)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(minimal)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        // level_to_budget("minimal") → 512
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 512);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 512"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_low_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(low)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(low)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 1024);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 1024"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_medium_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(medium)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(medium)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 8192);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 8192"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_high_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(high)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(high)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 24576);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 24576"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_xhigh_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(xhigh)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(xhigh)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        // level_to_budget("xhigh") → 32768
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 32768);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 32768"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_50_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(50)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(50)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        // clamp to min (128)
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 128);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 128 (clamped)"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_512_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(512)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(512)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 512);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 512"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_8192_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(8192)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(8192)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 8192);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 8192"),
+        }
+    }
+
+    #[test]
+    fn test_gemini_3_flash_anthropic_50000_suffix() {
+        let body = json!({"model": "gemini-3-flash-preview(50000)", "messages": []});
+        let result = inject_thinking_config(
+            body.clone(),
+            "gemini-3-flash-preview(50000)",
+            Protocol::Anthropic,
+            "/v1/messages",
+        );
+
+        // clamp to max (32768)
+        match result {
+            InjectionResult::Injected(body) => {
+                assert_eq!(body["model"], "gemini-3-flash-preview");
+                assert_eq!(body["thinking"]["budget_tokens"], 32768);
+            }
+            _ => panic!("Expected Injected with budget_tokens: 32768 (clamped)"),
         }
     }
 }
