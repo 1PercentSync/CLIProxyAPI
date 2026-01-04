@@ -9,25 +9,9 @@ The system SHALL将努力等级字符串映射到 token 预算，与 CLIProxyAPI
 #### Scenario: 标准努力等级
 - **当** 努力等级为以下之一：none, auto, minimal, low, medium, high, xhigh
 - **则** The system SHALL分别映射到预算：0, -1, 512, 1024, 8192, 24576, 32768
-- **且** 应用钳制规则：
-  - `none` → 0（若模型不允许 0 则钳制到 min）
-  - `auto` → -1（若模型不支持动态则钳制到中点，见下方说明）
-  - 其他等级 → 对应预算值，钳制到 [min, max] 范围
 
-> **注意：** 未知模型的处理由 `thinking/injector.rs` 负责（返回 HTTP 400），
-> 此模块仅处理已知模型的映射和钳制逻辑。
-
-#### Scenario: auto 等级钳制（模型不支持动态预算）
-- **当** 努力等级为 `auto`
-- **且** 模型的 `DynamicAllowed == false`
-- **则** The system SHALL 返回中点值 `(min + max) / 2`
-
-> **⚠️ 设计决策 - 与 CLIProxyAPI 不同：**
-> CLIProxyAPI 在 `mid <= 0` 时有额外的回退逻辑（返回 0 或 min）。
-> RS-Proxy 省略此分支，因为：
-> 1. 当前所有模型定义中 `min + max > 0`，`mid` 永远不会 <= 0
-> 2. RS-Proxy 要求模型必须在注册表中，可保证模型定义的合理性
-> 3. 简化实现，避免不可达代码
+> **注意：** `none`/`0` 和 `auto`/`-1` 的特殊处理在意图层面完成（见 thinking-parser spec），
+> 此模块仅提供基础的映射函数。
 
 ### Requirement: 预算到努力等级反向映射
 
@@ -35,27 +19,20 @@ The system SHALL将数值预算映射回努力等级字符串（OpenAI 协议需
 
 **文件：** `src/thinking/models.rs`
 
-#### Scenario: 预算到努力等级转换（有离散等级）
+#### Scenario: 预算到努力等级转换（通用映射，双向对称）
 - **当** 需要将数值预算转换为努力等级时（如 OpenAI 协议）
-- **且** 模型有离散等级列表
-- **则** The system SHALL使用模型的等级列表：
-  - 0 → `levels[0]`（最低等级）
-  - -1 → `"auto"`
-  - 1 - 1024 → `"low"`
-  - 1025 - 8192 → `"medium"`
-  - 8193 - 24576 → `"high"`
-  - 24577+ → `levels[last]`（最高等级）
-
-#### Scenario: 预算到努力等级转换（无离散等级 - 跨协议调用）
-- **当** 需要将数值预算转换为努力等级时
-- **且** 模型没有离散等级列表（如通过 OpenAI 协议调用 Claude/Gemini 2.5）
-- **则** The system SHALL使用通用映射表：
+- **则** The system SHALL使用与 `level_to_budget` 双向对称的通用映射：
   - 0 → `"none"`
   - -1 → `"auto"`
-  - 1 - 1024 → `"low"`
+  - 1 - 512 → `"minimal"`
+  - 513 - 1024 → `"low"`
   - 1025 - 8192 → `"medium"`
   - 8193 - 24576 → `"high"`
   - 24577+ → `"xhigh"`
+
+#### Scenario: 有离散等级列表的模型
+- **当** 模型有离散等级列表
+- **则** The system SHALL 先使用通用映射，然后通过 `clamp_effort_to_levels` 钳制到模型支持的等级
 
 > **说明：跨协议调用场景**
 > 当用户通过 OpenAI 兼容端点（如中转服务）调用 Claude 或 Gemini 2.5 模型时：
@@ -63,25 +40,8 @@ The system SHALL将数值预算映射回努力等级字符串（OpenAI 协议需
 > - 但 OpenAI 协议需要 `reasoning_effort` 字符串
 > - 此时使用通用映射表将预算转换为等级字符串
 >
-> 示例：`claude-sonnet-4(high)` 通过 `/v1/chat/completions` 调用
-> → budget = 24576 → reasoning_effort = "high"
-
-### Requirement: Gemini thinkingLevel 专用映射
-
-The system SHALL 为 Gemini 协议提供专用的 thinkingLevel 到预算映射。
-
-**文件：** `src/thinking/models.rs`
-
-#### Scenario: Gemini thinkingLevel 转换
-- **当** 需要将 Gemini 的 thinkingLevel 转换为预算时
-- **则** The system SHALL使用以下映射（注意 high 的值与通用映射不同）：
-  - `"minimal"` → 512
-  - `"low"` → 1024
-  - `"medium"` → 8192
-  - `"high"` → **32768**（不是 24576）
-
-> **⚠️ 注意：** Gemini 的 `high` 等级映射到 32768，与通用的 24576 不同。
-> 这是因为 Gemini 3 模型的 thinkingLevel 使用不同的预算范围。
+> 示例：`claude-sonnet-4(512)` 通过 `/v1/chat/completions` 调用
+> → budget = 512 → reasoning_effort = "minimal"
 
 ### Requirement: 预算钳制
 
@@ -93,15 +53,30 @@ The system SHALL 将数值预算钳制到模型支持的范围内。
 - **当** 输入预算超出模型的 `[min, max]` 范围时
 - **则** The system SHALL 钳制到范围边界
 
-#### Scenario: 特殊值 0（禁用思考）
-- **当** 输入预算为 0
-- **且** 模型的 `zero_allowed == false`
-- **则** The system SHALL 钳制到 `min`
+#### Scenario: 特殊值处理（在意图层面）
 
-#### Scenario: 特殊值 -1（动态预算）
-- **当** 输入预算为 -1
-- **且** 模型的 `dynamic_allowed == false`
-- **则** The system SHALL 钳制到中点 `(min + max) / 2`
+> **⚠️ 设计变更 - 意图分流架构：**
+>
+> 特殊值 `0`（禁用）和 `-1`（动态）的处理已移至意图层面（`ThinkingIntent`）：
+>
+> | 后缀 | 意图 | 处理位置 |
+> |------|------|----------|
+> | `(none)` / `(0)` | `ThinkingIntent::Disabled` | `resolve_intent_to_config()` |
+> | `(auto)` / `(-1)` | `ThinkingIntent::Dynamic` | `resolve_intent_to_config()` |
+> | 其他 | `ThinkingIntent::Fixed` | `clamp_budget()` / `clamp_effort_to_levels()` |
+>
+> `clamp_budget()` 仅处理 `Fixed` 意图中的数值预算钳制，
+> 不再负责 `0` 和 `-1` 的协议特定转换。
+
+#### Scenario: 预算钳制规则
+- **当** 输入预算为 0 且 `zero_allowed == false`
+- **则** The system SHALL 返回 `min`
+- **当** 输入预算为 -1 且 `dynamic_allowed == false`
+- **则** The system SHALL 返回 `auto_budget` 或 `(min + max) / 2`
+- **当** 输入预算在 `(0, min)` 范围内
+- **则** The system SHALL 返回 `min`
+- **当** 输入预算超过 `max`
+- **则** The system SHALL 返回 `max`
 
 ### Requirement: 等级钳制
 
@@ -119,39 +94,22 @@ The system SHALL 将等级字符串钳制到模型支持的离散等级列表。
 - **若** 向上没有支持的等级
 - **则** The system SHALL 返回最高可用等级
 
-#### Scenario: auto 等级特殊处理
-- **当** 输入等级为 `auto`
-- **且** 模型支持 `auto`
-- **则** The system SHALL 返回 `"auto"`
-- **若** 模型不支持 `auto`
-- **则** The system SHALL 将 `auto` 当作 `medium` 处理
+#### Scenario: auto 等级处理
 
-### Requirement: 支持思考的模型的思考注入
-
-The system SHALL仅为声明支持思考的模型注入思考配置。
-
-**文件：** `src/thinking/models.rs`
-
-#### Scenario: 注册表中不支持思考的模型
-- **当** 模型存在于注册表中但未声明思考支持
-- **且** 带有后缀 `(high)`
-- **则** The system SHALL去除括号并使用基础模型名称
-- **且** 不注入任何思考字段
-
-#### Scenario: 不在注册表中的模型带思考后缀
-- **当** 模型带有思考后缀（如 `(high)`、`(16384)`）
-- **且** 模型不存在于注册表中
-- **则** The system SHALL返回 HTTP 400 错误，说明模型未知
-
-> **⚠️ 设计决策 - 与 CLIProxyAPI 不同：**
-> RS-Proxy 要求模型必须在注册表中才能应用思考配置。
-> CLIProxyAPI 允许未知模型使用思考后缀并采用回退行为。
-> RS-Proxy 返回错误，确保行为可预测，防止错误配置导致的静默失败
->（如错误的 max_tokens 值）。
+> **⚠️ 设计变更 - `auto` 在意图层面处理：**
+>
+> `auto` 等级在 `to_intent()` 阶段被识别为 `ThinkingIntent::Dynamic`，
+> 不会进入 `clamp_effort_to_levels()`。
+>
+> 如果 `auto` 意外进入此函数（如代码错误），
+> 会被当作 `medium` 处理（使用 `LEVEL_ORDER` 中的默认位置 3）。
 
 ### 实现说明
 
 ```rust
+/// 等级优先级顺序（用于 clamp）
+const LEVEL_ORDER: &[&str] = &["none", "minimal", "low", "medium", "high", "xhigh"];
+
 /// 等级到预算（正向映射 - 通用）
 pub fn level_to_budget(level: &str) -> Option<i32> {
     match level.to_lowercase().as_str() {
@@ -166,56 +124,37 @@ pub fn level_to_budget(level: &str) -> Option<i32> {
     }
 }
 
-/// Gemini thinkingLevel 到预算（Gemini 专用）
-/// 注意：high 映射到 32768，与通用映射不同
-pub fn gemini_level_to_budget(level: &str) -> Option<i32> {
-    match level.to_lowercase().as_str() {
-        "minimal" => Some(512),
-        "low" => Some(1024),
-        "medium" => Some(8192),
-        "high" => Some(32768),  // 注意：与通用的 24576 不同
-        _ => None,
-    }
-}
-
-/// 预算到努力等级（反向映射，OpenAI 协议需要）
-/// 支持有离散等级和无离散等级（跨协议调用）两种情况
-pub fn budget_to_effort<'a>(budget: i32, model_levels: Option<&'a [&'a str]>) -> &'a str {
+/// 预算到努力等级（反向映射，与 level_to_budget 双向对称）
+///
+/// 对于有离散等级列表的模型，返回值应通过 clamp_effort_to_levels 进一步钳制。
+pub fn budget_to_effort(budget: i32) -> &'static str {
     match budget {
-        // 有离散等级：返回最低等级；无离散等级：返回 "none"
-        0 => model_levels
-            .and_then(|l| l.first().copied())
-            .unwrap_or("none"),
+        0 => "none",
         -1 => "auto",
-        1..=1024 => "low",
+        1..=512 => "minimal",
+        513..=1024 => "low",
         1025..=8192 => "medium",
         8193..=24576 => "high",
-        // 有离散等级：返回最高等级；无离散等级：返回 "xhigh"
-        _ if budget > 24576 => model_levels
-            .and_then(|l| l.last().copied())
-            .unwrap_or("xhigh"),
+        _ if budget > 24576 => "xhigh",
         _ => "medium",  // 负数（除 -1 外）的回退
     }
 }
 
-/// 带模型感知的预算到努力等级
-pub fn budget_to_effort_for_model(model: &str, budget: i32) -> String {
-    let levels = get_model_thinking_levels(model);
-    budget_to_effort(budget, levels.as_deref()).to_string()
-}
-
 /// 预算钳制
-/// 将数值预算钳制到模型支持的范围，处理特殊值 0 和 -1
+///
+/// 将数值预算钳制到模型支持的范围，处理特殊值 0 和 -1。
+/// 当 -1 被钳制时，优先使用 `auto_budget`，否则使用 `(min + max) / 2`。
 pub fn clamp_budget(
     budget: i32,
     min: i32,
     max: i32,
     zero_allowed: bool,
     dynamic_allowed: bool,
+    auto_budget: Option<i32>,
 ) -> i32 {
     match budget {
         0 if !zero_allowed => min,
-        -1 if !dynamic_allowed => (min + max) / 2,
+        -1 if !dynamic_allowed => auto_budget.unwrap_or((min + max) / 2),
         _ if budget < min && budget > 0 => min,
         _ if budget > max => max,
         _ => budget,
@@ -223,28 +162,20 @@ pub fn clamp_budget(
 }
 
 /// 等级钳制
-/// 将等级字符串钳制到模型支持的离散等级列表
-/// 不在列表中的等级向上 clamp 到最近的支持等级
+///
+/// 将等级字符串钳制到模型支持的离散等级列表。
+/// 不在列表中的等级向上 clamp 到最近的支持等级。
+///
+/// 注意："auto" 在意图层面处理，不应进入此函数。
+/// 如果进入，会被当作 "medium" 处理（LEVEL_ORDER 默认位置）。
 pub fn clamp_effort_to_levels<'a>(effort: &str, levels: &'a [&'a str]) -> &'a str {
-    // 等级优先级顺序
-    const LEVEL_ORDER: &[&str] = &["none", "minimal", "low", "medium", "high", "xhigh"];
-
-    // auto 特殊处理：如果模型支持 auto 则直接返回，否则当作 medium 处理
-    let effort = if effort == "auto" {
-        if levels.contains(&"auto") {
-            return "auto";
-        }
-        "medium"  // auto 回退到 medium
-    } else {
-        effort
-    };
-
     // 如果等级在支持列表中，直接返回
     if levels.contains(&effort) {
         return levels.iter().find(|&&l| l == effort).unwrap();
     }
 
     // 找到输入等级的位置
+    // "auto" 不在 LEVEL_ORDER 中，会得到默认位置 3 (medium)
     let effort_idx = LEVEL_ORDER.iter().position(|&l| l == effort).unwrap_or(3);
 
     // 向上 clamp：找到第一个 >= 当前等级的支持等级
@@ -258,3 +189,35 @@ pub fn clamp_effort_to_levels<'a>(effort: &str, levels: &'a [&'a str]) -> &'a st
     levels.last().unwrap()
 }
 ```
+
+### 与意图分流架构的关系
+
+```
+用户输入后缀
+    ↓
+to_intent() → ThinkingIntent
+    │
+    ├─ Disabled (none/0)
+    │     → 直接在 resolve_intent_to_config() 处理
+    │
+    ├─ Dynamic (auto/-1)
+    │     → 直接在 resolve_intent_to_config() 处理
+    │
+    └─ Fixed (level/budget)
+          ↓
+    ┌─────────────────────────┐
+    │ thinking/models.rs      │
+    │ ├─ level_to_budget()    │
+    │ ├─ budget_to_effort()   │
+    │ ├─ clamp_budget()       │
+    │ └─ clamp_effort_to_levels() │
+    └─────────────────────────┘
+          ↓
+    ThinkingConfig
+```
+
+此模块的函数仅在 `Fixed` 意图下被调用，用于：
+1. 验证等级字符串有效性（`level_to_budget`）
+2. 数值预算转等级（`budget_to_effort`）
+3. 数值预算钳制（`clamp_budget`）
+4. 等级钳制（`clamp_effort_to_levels`）
