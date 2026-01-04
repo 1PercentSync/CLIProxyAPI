@@ -31,6 +31,9 @@ pub struct ThinkingSupport {
     pub zero_allowed: bool,
     /// 是否允许 -1 值（动态思考预算）
     pub dynamic_allowed: bool,
+    /// 当用户请求 (auto) 或 (-1) 但协议不支持动态时使用的预算值
+    /// 设置此值后，(auto) 和 (-1) 会使用此预算而非 (min+max)/2
+    pub auto_budget: Option<i32>,
     /// 离散推理等级（如 "low", "medium", "high"）
     /// 设置时，模型使用等级而非 token 预算
     pub levels: Option<&'static [&'static str]>,
@@ -47,15 +50,28 @@ pub struct ModelInfo {
 }
 ```
 
-### 模型定义示例
+> **⚠️ 设计决策 - `auto_budget` 字段：**
+>
+> 新增 `auto_budget: Option<i32>` 字段用于处理以下情况：
+>
+> 1. **Claude 模型**：API 不支持 `budget_tokens: -1`，需要使用固定预算
+>    - 设置 `auto_budget: Some(16384)`
+>    - 当用户使用 `(auto)` 或 `(-1)` 时返回 16384
+>
+> 2. **跨协议模型**（如 `gemini-claude-*`）：
+>    - 通过 Gemini API 访问 Claude 模型
+>    - Gemini 协议支持 `-1`，但 Anthropic 协议不支持
+>    - 设置 `auto_budget: Some(16384)` 供 Anthropic 协议使用
+>
+> 当 `auto_budget` 未设置时，使用 `(min + max) / 2` 作为回退。
 
-对照 CLIProxyAPI 的 `internal/registry/model_definitions.go`，以下仅为结构示例，实现时应完整复制所有模型定义：
+### 模型定义示例
 
 ```rust
 use std::sync::LazyLock;
 
 static MODELS: LazyLock<Vec<ModelInfo>> = LazyLock::new(|| vec![
-    // 示例 1：使用数值预算的模型
+    // 示例 1：Claude 模型（不支持动态预算）
     ModelInfo {
         id: "claude-sonnet-4-5-20250929",
         max_completion_tokens: 64000,
@@ -63,12 +79,13 @@ static MODELS: LazyLock<Vec<ModelInfo>> = LazyLock::new(|| vec![
             min: 1024,
             max: 100000,
             zero_allowed: false,
-            dynamic_allowed: true,
+            dynamic_allowed: false, // Claude API 不支持 budget_tokens=-1
+            auto_budget: Some(16384), // (auto) 和 (-1) 使用此预算
             levels: None,
         }),
     },
 
-    // 示例 2：使用离散等级的模型
+    // 示例 2：Gemini 3 模型（支持动态预算，有离散等级）
     ModelInfo {
         id: "gemini-3-pro-preview",
         max_completion_tokens: 65536,
@@ -77,21 +94,58 @@ static MODELS: LazyLock<Vec<ModelInfo>> = LazyLock::new(|| vec![
             max: 32768,
             zero_allowed: false,
             dynamic_allowed: true,
+            auto_budget: None, // 不需要，Gemini 协议支持 -1
             levels: Some(&["low", "high"]),
         }),
     },
 
-    // 实现时需包含 CLIProxyAPI 中的所有模型...
+    // 示例 3：跨协议模型（Claude via Gemini API）
+    ModelInfo {
+        id: "gemini-claude-opus-4-5-thinking",
+        max_completion_tokens: 64000,
+        thinking: Some(ThinkingSupport {
+            min: 1024,
+            max: 200000,
+            zero_allowed: false,
+            dynamic_allowed: true, // Gemini 协议支持 -1
+            auto_budget: Some(16384), // Anthropic 协议使用此值
+            levels: None,
+        }),
+    },
 ]);
 
 pub fn get_model_info(id: &str) -> Option<&'static ModelInfo> {
     MODELS.iter().find(|m| m.id == id)
 }
-
-pub fn model_supports_thinking(id: &str) -> bool {
-    get_model_info(id).map(|m| m.thinking.is_some()).unwrap_or(false)
-}
 ```
+
+### 跨协议模型说明
+
+部分模型通过非原生协议访问（如 Claude 模型通过 Gemini API）。这些模型的 ID 可能以 `gemini-` 开头但实际是其他供应商的模型。
+
+| 模型 ID | 实际模型 | 访问方式 |
+|---------|----------|----------|
+| `gemini-claude-sonnet-4-5-thinking` | Claude Sonnet 4.5 | Gemini API |
+| `gemini-claude-opus-4-5-thinking` | Claude Opus 4.5 | Gemini API |
+
+这些跨协议模型的特点：
+- `dynamic_allowed: true`（Gemini 协议支持 `-1`）
+- `auto_budget: Some(16384)`（Anthropic 协议回退值）
+- 不被识别为"原生 Gemini 模型"（用于 Disabled 意图处理）
+
+> **注意：原生 Gemini 模型判断**
+>
+> `thinking/injector.rs` 使用白名单判断模型是否为原生 Gemini：
+> ```rust
+> const NATIVE_GEMINI_PREFIXES: &[&str] = &[
+>     "gemini-2.5-",
+>     "gemini-3-",
+>     "gemini-pro",
+>     "gemini-flash",
+> ];
+> ```
+>
+> 这确保 `gemini-claude-*` 等跨协议模型不会被误判。
 
 ### 维护说明
 
@@ -104,32 +158,16 @@ pub fn model_supports_thinking(id: &str) -> bool {
 - 使用 `std::sync::LazyLock` 实现静态初始化（Rust 1.80+）
 - 模型 ID 必须与 CLIProxyAPI 完全匹配
 - `ThinkingSupport` 字段含义与 Go 版本一致
+- **新增：** `auto_budget` 字段用于动态预算回退
 
 ### 模型去重与合并规则
 
-CLIProxyAPI 中的 Gemini 模型分为多个函数（`GetGeminiModels`、`GetGeminiVertexModels`、`GetGeminiCLIModels`、`GetAIStudioModels`），同一模型 ID 可能出现在多个函数中，但参数略有不同。
+CLIProxyAPI 中的 Gemini 模型分为多个函数，同一模型 ID 可能出现在多个函数中。
 
 **合并规则：**
 
-RS-Proxy 只需保留一份模型定义，当同一模型 ID 出现在多个来源时，按以下优先级合并：
+RS-Proxy 只需保留一份模型定义，按以下优先级合并：
 
 1. **官方 API 为权威来源** - `GetGeminiModels()` 最权威
 2. **Vertex 次之** - `GetGeminiVertexModels()`
 3. **CLI/AIStudio 补充** - `GetGeminiCLIModels()`、`GetAIStudioModels()` 用于补充缺失字段
-
-**合并策略：**
-- 使用最权威来源的参数值作为基础
-- 缺失的参数从次权威来源补充
-- **不覆盖**已有参数值
-
-**示例：**
-```
-gemini-2.5-pro 出现在多个函数中：
-- GetGeminiModels(): Thinking.Min=128, Thinking.Max=32768
-- GetAIStudioModels(): Thinking.Min=128, Thinking.Max=32768
-
-取 GetGeminiModels() 的定义为准。
-```
-
-> **注意：** 当前 CLIProxyAPI 中各函数的同 ID 模型定义基本一致，
-> 此规则主要用于处理未来可能出现的差异情况。
