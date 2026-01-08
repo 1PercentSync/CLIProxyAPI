@@ -256,7 +256,7 @@ fn resolve_fixed_level(
             });
         }
     };
-
+    
     if needs_effort {
         // Protocol needs Effort (OpenAI or Gemini 3 with levels)
         let effort = if let Some(levels) = thinking.levels {
