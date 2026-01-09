@@ -86,6 +86,14 @@ func (s *FileSynthesizer) Synthesize(ctx *SynthesisContext) ([]*coreauth.Auth, e
 			}
 		}
 
+		// Look up priority from auth-priority config map by filename
+		priority := 0
+		if cfg != nil && cfg.AuthPriority != nil {
+			if p, ok := cfg.AuthPriority[name]; ok {
+				priority = p
+			}
+		}
+
 		a := &coreauth.Auth{
 			ID:       id,
 			Provider: provider,
@@ -97,6 +105,7 @@ func (s *FileSynthesizer) Synthesize(ctx *SynthesisContext) ([]*coreauth.Auth, e
 				"path":   full,
 			},
 			ProxyURL:  proxyURL,
+			Priority:  priority,
 			Metadata:  metadata,
 			CreatedAt: now,
 			UpdatedAt: now,
@@ -179,6 +188,7 @@ func SynthesizeGeminiVirtualAuths(primary *coreauth.Auth, metadata map[string]an
 			Attributes: attrs,
 			Metadata:   metadataCopy,
 			ProxyURL:   primary.ProxyURL,
+			Priority:   primary.Priority,
 			Prefix:     primary.Prefix,
 			CreatedAt:  primary.CreatedAt,
 			UpdatedAt:  primary.UpdatedAt,

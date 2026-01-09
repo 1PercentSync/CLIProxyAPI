@@ -87,6 +87,7 @@ ws-auth: false
 #   - api-key: "AIzaSy...01"
 #     prefix: "test" # optional: require calls like "test/gemini-3-pro-preview" to target this credential
 #     base-url: "https://generativelanguage.googleapis.com"
+#     priority: 100            # Higher values = higher priority. Default is 0.
 #     headers:
 #       X-Custom-Header: "custom-value"
 #     proxy-url: "socks5://proxy.example.com:1080"
@@ -99,12 +100,14 @@ ws-auth: false
 #       - "*-preview"          # wildcard matching suffix (e.g. gemini-3-pro-preview)
 #       - "*flash*"            # wildcard matching substring (e.g. gemini-2.5-flash-lite)
 #   - api-key: "AIzaSy...02"
+#     priority: 50             # Lower priority, used when higher priority keys fail or are in cooldown
 
 # Codex API keys
 # codex-api-key:
 #   - api-key: "sk-atSM..."
 #     prefix: "test" # optional: require calls like "test/gpt-5-codex" to target this credential
 #     base-url: "https://www.example.com" # use the custom codex API endpoint
+#     priority: 100          # Higher values = higher priority. Default is 0.
 #     headers:
 #       X-Custom-Header: "custom-value"
 #     proxy-url: "socks5://proxy.example.com:1080" # optional: per-key proxy override
@@ -120,9 +123,11 @@ ws-auth: false
 # Claude API keys
 # claude-api-key:
 #   - api-key: "sk-atSM..." # use the official claude API key, no need to set the base url
+#     priority: 100          # Higher values = higher priority. Default is 0.
 #   - api-key: "sk-atSM..."
 #     prefix: "test" # optional: require calls like "test/claude-sonnet-latest" to target this credential
 #     base-url: "https://www.example.com" # use the custom claude API endpoint
+#     priority: 50           # Lower priority, used as fallback
 #     headers:
 #       X-Custom-Header: "custom-value"
 #     proxy-url: "socks5://proxy.example.com:1080" # optional: per-key proxy override
@@ -144,8 +149,10 @@ ws-auth: false
 #       X-Custom-Header: "custom-value"
 #     api-key-entries:
 #       - api-key: "sk-or-v1-...b780"
+#         priority: 100    # Higher values = higher priority. Default is 0.
 #         proxy-url: "socks5://proxy.example.com:1080" # optional: per-key proxy override
-#       - api-key: "sk-or-v1-...b781" # without proxy-url
+#       - api-key: "sk-or-v1-...b781"
+#         priority: 50     # Lower priority, used as fallback
 #     models: # The models supported by the provider.
 #       - name: "moonshotai/kimi-k2:free" # The actual model name.
 #         alias: "kimi-k2" # The alias used in the API.
