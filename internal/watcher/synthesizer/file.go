@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -101,6 +102,12 @@ func (s *FileSynthesizer) Synthesize(ctx *SynthesisContext) ([]*coreauth.Auth, e
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
+		// Apply priority from config if specified for this auth file
+		if cfg != nil {
+			if p, ok := cfg.AuthPriority[name]; ok {
+				a.Attributes["priority"] = strconv.Itoa(p)
+			}
+		}
 		ApplyAuthExcludedModelsMeta(a, cfg, nil, "oauth")
 		if provider == "gemini-cli" {
 			if virtuals := SynthesizeGeminiVirtualAuths(a, metadata, now); len(virtuals) > 0 {
@@ -139,6 +146,7 @@ func SynthesizeGeminiVirtualAuths(primary *coreauth.Auth, metadata map[string]an
 	primary.Attributes["virtual_children"] = strings.Join(projects, ",")
 	source := primary.Attributes["source"]
 	authPath := primary.Attributes["path"]
+	priorityAttr := primary.Attributes["priority"]
 	originalProvider := primary.Provider
 	if originalProvider == "" {
 		originalProvider = "gemini-cli"
@@ -159,6 +167,9 @@ func SynthesizeGeminiVirtualAuths(primary *coreauth.Auth, metadata map[string]an
 		}
 		if authPath != "" {
 			attrs["path"] = authPath
+		}
+		if priorityAttr != "" {
+			attrs["priority"] = priorityAttr
 		}
 		metadataCopy := map[string]any{
 			"email":             email,
