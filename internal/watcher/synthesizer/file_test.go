@@ -121,6 +121,40 @@ func TestFileSynthesizer_Synthesize_ValidAuthFile(t *testing.T) {
 	}
 }
 
+func TestFileSynthesizer_Synthesize_AppliesAuthPriorityFromConfig(t *testing.T) {
+	tempDir := t.TempDir()
+
+	authData := map[string]any{
+		"type":  "claude",
+		"email": "test@example.com",
+	}
+	data, _ := json.Marshal(authData)
+	if err := os.WriteFile(filepath.Join(tempDir, "claude-auth.json"), data, 0o644); err != nil {
+		t.Fatalf("failed to write auth file: %v", err)
+	}
+
+	synth := NewFileSynthesizer()
+	ctx := &SynthesisContext{
+		Config: &config.Config{AuthPriority: map[string]int{
+			"claude-auth.json": -10,
+		}},
+		AuthDir:     tempDir,
+		Now:         time.Now(),
+		IDGenerator: NewStableIDGenerator(),
+	}
+
+	auths, err := synth.Synthesize(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(auths) != 1 {
+		t.Fatalf("expected 1 auth, got %d", len(auths))
+	}
+	if got := auths[0].Attributes["priority"]; got != "-10" {
+		t.Fatalf("expected priority -10, got %q", got)
+	}
+}
+
 func TestFileSynthesizer_Synthesize_GeminiProviderMapping(t *testing.T) {
 	tempDir := t.TempDir()
 
@@ -574,6 +608,44 @@ func TestFileSynthesizer_Synthesize_MultiProjectGemini(t *testing.T) {
 		}
 		if v.Attributes["gemini_virtual_parent"] != primary.ID {
 			t.Errorf("expected virtual %d parent to be %s, got %s", i, primary.ID, v.Attributes["gemini_virtual_parent"])
+		}
+	}
+}
+
+func TestFileSynthesizer_Synthesize_MultiProjectGeminiInheritsPriority(t *testing.T) {
+	tempDir := t.TempDir()
+
+	authData := map[string]any{
+		"type":       "gemini",
+		"email":      "multi@example.com",
+		"project_id": "project-a, project-b",
+	}
+	data, _ := json.Marshal(authData)
+	if err := os.WriteFile(filepath.Join(tempDir, "gemini-multi.json"), data, 0o644); err != nil {
+		t.Fatalf("failed to write auth file: %v", err)
+	}
+
+	synth := NewFileSynthesizer()
+	ctx := &SynthesisContext{
+		Config: &config.Config{AuthPriority: map[string]int{
+			"gemini-multi.json": 7,
+		}},
+		AuthDir:     tempDir,
+		Now:         time.Now(),
+		IDGenerator: NewStableIDGenerator(),
+	}
+
+	auths, err := synth.Synthesize(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(auths) != 3 {
+		t.Fatalf("expected 3 auths (1 primary + 2 virtuals), got %d", len(auths))
+	}
+
+	for i, auth := range auths {
+		if got := auth.Attributes["priority"]; got != "7" {
+			t.Fatalf("auth[%d] expected priority 7, got %q", i, got)
 		}
 	}
 }
