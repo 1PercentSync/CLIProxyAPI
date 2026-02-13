@@ -124,6 +124,12 @@ func (s *FileSynthesizer) Synthesize(ctx *SynthesisContext) ([]*coreauth.Auth, e
 				}
 			}
 		}
+		// Config-level auth-priority overrides file-level priority
+		if cfg != nil {
+			if p, ok := cfg.AuthPriority[name]; ok {
+				a.Attributes["priority"] = strconv.Itoa(p)
+			}
+		}
 		ApplyAuthExcludedModelsMeta(a, cfg, perAccountExcluded, "oauth")
 		if provider == "gemini-cli" {
 			if virtuals := SynthesizeGeminiVirtualAuths(a, metadata, now); len(virtuals) > 0 {

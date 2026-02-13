@@ -83,6 +83,15 @@ quota-exceeded:
 routing:
   strategy: "round-robin" # round-robin (default), fill-first
 
+# Priority configuration for OAuth/file-backed credentials.
+# Maps auth file names (from auth-dir) to priority values. Higher values are preferred.
+# This enables cross-provider priority control (e.g., OAuth vs API key).
+# Use negative values to make OAuth credentials lower priority than API keys (which default to 0).
+# auth-priority:
+#   "antigravity-user@example.com.json": 100  # highest priority - use this OAuth first
+#   "gemini-cli-user-all.json": 50            # medium priority
+#   "claude-backup.json": -10                 # fallback after API keys
+
 # When true, enable authentication for the WebSocket API (/v1/ws).
 ws-auth: false
 
