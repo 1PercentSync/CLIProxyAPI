@@ -322,7 +322,7 @@ func GetGeminiVertexModels() []*ModelInfo {
 			InputTokenLimit:            1048576,
 			OutputTokenLimit:           65536,
 			SupportedGenerationMethods: []string{"generateContent", "countTokens", "createCachedContent", "batchGenerateContent"},
-			Thinking:                   &ThinkingSupport{Min: 1, Max: 32768, ZeroAllowed: false, DynamicAllowed: true, Levels: []string{"low", "high"}},
+			Thinking:                   &ThinkingSupport{Min: 128, Max: 32768, ZeroAllowed: false, DynamicAllowed: true, Levels: []string{"low", "high"}},
 		},
 		{
 			ID:                         "gemini-3-pro-image-preview",
